@@ -10,6 +10,11 @@ import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { onPeerDetected, onSyncComplete } from "@/services/backgroundSync";
+import {
+  getInternetSyncStatus,
+  pullPosts as inetPullPosts,
+  pushPosts as inetPushPosts,
+} from "@/services/internetSync";
 
 const NATO = [
   "Alpha","Bravo","Charlie","Delta","Echo","Foxtrot","Golf","Hotel",
@@ -225,6 +230,18 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Pull posts from server and merge into local state
+  async function pullFromServer() {
+    try {
+      const { enabled } = await getInternetSyncStatus();
+      if (!enabled) return;
+      const serverPosts = await inetPullPosts();
+      if (serverPosts.length > 0) {
+        setPosts((prev) => mergePosts(prev, serverPosts).posts);
+      }
+    } catch {}
+  }
+
   function connect() {
     if (!myNodeRef.current.id) return;
     try {
@@ -247,6 +264,8 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
             return next;
           });
         }, 5000);
+        // Pull server posts on every connection
+        pullFromServer();
       };
 
       ws.onmessage = (e) => {
@@ -277,9 +296,7 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
       );
       if (isNew) {
         send({ type: "HEARTBEAT", node: myNodeRef.current });
-        // Notify background sync of new peer
         onPeerDetected(data.node.name).catch(() => {});
-        // Share posts after brief delay
         if (postsRef.current.length > 0) {
           setTimeout(() => {
             send({
@@ -314,14 +331,24 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
       setPosts((prev) => {
         if (prev.find((p) => p.id === data.post.id)) return prev;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        // Push received post to server if internet sync enabled
+        getInternetSyncStatus().then(({ enabled }) => {
+          if (enabled) inetPushPosts([data.post]).catch(() => {});
+        });
         return [data.post, ...prev].sort((a, b) => b.timestamp - a.timestamp);
       });
     } else if (data.type === "POST_SYNC") {
       setPosts((prev) => {
         const result = mergePosts(prev, data.posts);
-        // Notify background sync of completed sync
         if (result.added > 0) {
           onSyncComplete(data.fromName, result.added).catch(() => {});
+          // Push new posts to server
+          const newPosts = data.posts.filter((p) =>
+            result.posts.find((rp) => rp.id === p.id)
+          );
+          getInternetSyncStatus().then(({ enabled }) => {
+            if (enabled) inetPushPosts(newPosts).catch(() => {});
+          });
         }
         return result.posts;
       });
@@ -389,6 +416,10 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     setPosts((prev) => [post, ...prev]);
     send({ type: "POST_BROADCAST", post });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Push to server if internet sync enabled
+    getInternetSyncStatus().then(({ enabled }) => {
+      if (enabled) inetPushPosts([post]).catch(() => {});
+    });
   }, []);
 
   const peerList = Array.from(peers.values());

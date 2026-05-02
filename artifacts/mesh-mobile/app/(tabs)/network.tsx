@@ -20,6 +20,11 @@ import {
   getBackgroundSyncSettings,
   requestNotifPermissions,
 } from "@/services/backgroundSync";
+import {
+  getInternetSyncStatus,
+  setInternetSyncEnabled,
+  pullPosts,
+} from "@/services/internetSync";
 
 // ─── Interval options ─────────────────────────────────────────────────────────
 const INTERVALS: { label: string; value: number }[] = [
@@ -94,6 +99,133 @@ function NodeDot({
       <Text style={{ fontSize: 9, fontFamily: "Inter_400Regular", color: colors.mutedForeground }}>
         {sublabel}
       </Text>
+    </View>
+  );
+}
+
+// ─── InternetSyncCard ─────────────────────────────────────────────────────────
+function InternetSyncCard({ colors }: { colors: ReturnType<typeof useColors> }) {
+  const [enabled, setEnabled] = useState(true);
+  const [lastPull, setLastPull] = useState<number | null>(null);
+  const [lastPush, setLastPush] = useState<number | null>(null);
+  const [serverPostCount, setServerPostCount] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+
+  const reload = useCallback(async () => {
+    const s = await getInternetSyncStatus();
+    setEnabled(s.enabled);
+    setLastPull(s.lastPull);
+    setLastPush(s.lastPush);
+    setServerPostCount(s.serverPostCount);
+  }, []);
+
+  useFocusEffect(useCallback(() => { reload(); }, [reload]));
+
+  const handleToggle = async (value: boolean) => {
+    await setInternetSyncEnabled(value);
+    setEnabled(value);
+    if (value) {
+      setSyncing(true);
+      await pullPosts();
+      setSyncing(false);
+      reload();
+    }
+  };
+
+  const handleManualSync = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    await pullPosts();
+    setSyncing(false);
+    reload();
+  };
+
+  const statusText = (() => {
+    if (!enabled) return "Off";
+    if (syncing) return "Syncing...";
+    if (lastPull) return `Last pull ${formatRelative(lastPull)}`;
+    return "Waiting for first sync...";
+  })();
+
+  return (
+    <View
+      style={[
+        styles.card,
+        {
+          backgroundColor: colors.card,
+          borderColor: enabled ? colors.primary + "55" : colors.border,
+        },
+      ]}
+    >
+      {/* Header row */}
+      <View style={styles.bgRow}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
+            INTERNET SYNC
+          </Text>
+          <Text style={[styles.bgTitle, { color: colors.foreground }]}>
+            Sync over internet
+          </Text>
+          <Text style={[styles.bgNote, { color: colors.mutedForeground }]}>
+            Push & pull updates via relay server
+          </Text>
+        </View>
+        <Switch
+          value={enabled}
+          onValueChange={handleToggle}
+          trackColor={{ false: colors.border, true: colors.primary + "88" }}
+          thumbColor={enabled ? colors.primary : colors.mutedForeground}
+          ios_backgroundColor={colors.border}
+        />
+      </View>
+
+      {/* Stats + status row */}
+      <View style={[styles.divider, { backgroundColor: colors.border }]} />
+      <View style={styles.inetStatsRow}>
+        <View style={styles.inetStat}>
+          <Text style={[styles.inetStatValue, { color: enabled ? colors.primary : colors.mutedForeground }]}>
+            {serverPostCount}
+          </Text>
+          <Text style={[styles.inetStatLabel, { color: colors.mutedForeground }]}>
+            On server
+          </Text>
+        </View>
+        <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+        <View style={styles.inetStat}>
+          <Text style={[styles.inetStatValue, { color: colors.foreground }]}>
+            {lastPull ? formatRelative(lastPull) : "—"}
+          </Text>
+          <Text style={[styles.inetStatLabel, { color: colors.mutedForeground }]}>
+            Last pull
+          </Text>
+        </View>
+        <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+        <View style={styles.inetStat}>
+          <Text style={[styles.inetStatValue, { color: colors.foreground }]}>
+            {lastPush ? formatRelative(lastPush) : "—"}
+          </Text>
+          <Text style={[styles.inetStatLabel, { color: colors.mutedForeground }]}>
+            Last push
+          </Text>
+        </View>
+      </View>
+
+      {/* Status + manual sync button */}
+      <View style={[styles.statusBox, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+        <View style={styles.statusRow}>
+          <View style={[styles.statusDot, { backgroundColor: enabled ? colors.primary : colors.border }]} />
+          <Text style={[styles.statusText, { color: colors.foreground }]}>{statusText}</Text>
+          {enabled && (
+            <Pressable
+              onPress={handleManualSync}
+              style={({ pressed }) => [styles.syncBtn, { opacity: pressed || syncing ? 0.5 : 1 }]}
+            >
+              <Feather name="refresh-cw" size={13} color={colors.primary} />
+              <Text style={[styles.syncBtnText, { color: colors.primary }]}>Sync now</Text>
+            </Pressable>
+          )}
+        </View>
+      </View>
     </View>
   );
 }
@@ -355,6 +487,9 @@ export default function NetworkScreen() {
         )}
       </View>
 
+      {/* Internet Sync */}
+      <InternetSyncCard colors={colors} />
+
       {/* Background Sync */}
       <BackgroundSyncCard colors={colors} />
 
@@ -508,4 +643,11 @@ const styles = StyleSheet.create({
   statValue: { fontSize: 24, fontWeight: "700", fontFamily: "Inter_700Bold" },
   statLabel: { fontSize: 11, marginTop: 2, fontFamily: "Inter_400Regular" },
   statDivider: { width: 1, height: 36 },
+  // Internet sync card
+  inetStatsRow: { flexDirection: "row", alignItems: "center" },
+  inetStat: { flex: 1, alignItems: "center", paddingVertical: 4 },
+  inetStatValue: { fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  inetStatLabel: { fontSize: 10, marginTop: 2, fontFamily: "Inter_400Regular" },
+  syncBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  syncBtnText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
 });
