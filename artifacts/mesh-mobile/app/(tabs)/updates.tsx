@@ -251,7 +251,7 @@ export default function UpdatesScreen() {
             />
           )
         ) : (
-          <MeshMap posts={posts} colors={colors} />
+          <MeshMap posts={posts} colors={colors} myId={myNode.id} />
         )}
       </View>
 

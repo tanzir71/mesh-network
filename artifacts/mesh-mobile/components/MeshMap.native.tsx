@@ -14,7 +14,15 @@ function formatRelative(ts: number): string {
   return new Date(ts).toLocaleDateString();
 }
 
-export default function MeshMap({ posts, colors }: { posts: Post[]; colors: Colors }) {
+export default function MeshMap({
+  posts,
+  colors,
+  myId,
+}: {
+  posts: Post[];
+  colors: Colors;
+  myId: string;
+}) {
   const geotagged = posts.filter((p) => p.lat !== null && p.lng !== null);
   const centerLat = geotagged.length > 0 ? geotagged[0].lat! : 37.7749;
   const centerLng = geotagged.length > 0 ? geotagged[0].lng! : -122.4194;
@@ -31,21 +39,45 @@ export default function MeshMap({ posts, colors }: { posts: Post[]; colors: Colo
       showsUserLocation
       userInterfaceStyle="dark"
     >
-      {geotagged.map((post) => (
-        <Marker
-          key={post.id}
-          coordinate={{ latitude: post.lat!, longitude: post.lng! }}
-          pinColor={colors.primary}
-        >
-          <Callout tooltip>
-            <View style={[styles.callout, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <Text style={[styles.calloutAuthor, { color: colors.primary }]}>{post.authorName}</Text>
-              <Text style={[styles.calloutText, { color: colors.foreground }]}>{post.text}</Text>
-              <Text style={[styles.calloutTime, { color: colors.mutedForeground }]}>{formatRelative(post.timestamp)}</Text>
-            </View>
-          </Callout>
-        </Marker>
-      ))}
+      {geotagged.map((post) => {
+        const isMe = post.authorId === myId;
+        return (
+          <Marker
+            key={post.id}
+            coordinate={{ latitude: post.lat!, longitude: post.lng! }}
+            pinColor={isMe ? "#22c55e" : colors.primary}
+          >
+            <Callout tooltip>
+              <View
+                style={[
+                  styles.callout,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: isMe
+                      ? "#22c55e44"
+                      : colors.primary + "44",
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.calloutAuthor,
+                    { color: isMe ? "#22c55e" : colors.primary },
+                  ]}
+                >
+                  {isMe ? `You (${post.authorName})` : post.authorName}
+                </Text>
+                <Text style={[styles.calloutText, { color: colors.foreground }]}>
+                  {post.text}
+                </Text>
+                <Text style={[styles.calloutTime, { color: colors.mutedForeground }]}>
+                  {formatRelative(post.timestamp)}
+                </Text>
+              </View>
+            </Callout>
+          </Marker>
+        );
+      })}
     </MapView>
   );
 }
