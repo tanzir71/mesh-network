@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "Ku9G1LkyGrPAsgv5Sj9BL"
+uri = "file://artifacts/mesh-mobile/assets/images/icon.png"
+type = "image"
+title = "emergency mesh icon"

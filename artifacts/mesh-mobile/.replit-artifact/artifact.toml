@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/mesh-mobile/"
+title = "Emergency Mesh Mobile"
+version = "1.0.0"
+id = "artifacts/mesh-mobile"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/mesh-mobile/" ]
+localPort = 19859
+
+[services.development]
+run = "pnpm --filter @workspace/mesh-mobile run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/mesh-mobile", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/mesh-mobile", "run", "serve" ]
+
+[services.env]
+PORT = "19859"
+BASE_PATH = "/mesh-mobile/"
