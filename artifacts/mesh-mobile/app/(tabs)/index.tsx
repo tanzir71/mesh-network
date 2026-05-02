@@ -52,11 +52,9 @@ function PulseRing({ color }: { color: string }) {
 }
 
 export default function HomeScreen() {
-  const { myNode, peers, sosAlerts, connected, renameNode } = useMesh();
+  const { myNode, peers, connected, renameNode } = useMesh();
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const activeSos = sosAlerts.filter((a) => !a.acked).length;
-
   const [editing, setEditing] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const inputRef = useRef<TextInput>(null);
@@ -133,14 +131,6 @@ export default function HomeScreen() {
           <Text style={styles.cardSub}>reachable</Text>
         </View>
 
-        <View style={[styles.card, styles.cardHalf, activeSos > 0 && styles.cardAlert]}>
-          <View style={styles.cardHeader}>
-            <Text style={[styles.cardLabel, activeSos > 0 && { color: colors.destructive }]}>SOS</Text>
-            <Feather name="alert-triangle" size={16} color={activeSos > 0 ? colors.destructive : colors.mutedForeground} />
-          </View>
-          <Text style={[styles.cardNumber, activeSos > 0 && { color: colors.destructive }]}>{activeSos}</Text>
-          <Text style={styles.cardSub}>active alerts</Text>
-        </View>
       </View>
 
       {/* YOUR NODE card */}
