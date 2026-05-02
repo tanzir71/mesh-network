@@ -93,7 +93,7 @@ export default function HomeScreen() {
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.header}>
-        <Text style={styles.title}>Emergency Mesh</Text>
+        <Text style={styles.title}>Mesh Network</Text>
         <Text style={styles.subtitle}>Offline peer-to-peer network</Text>
         <View style={styles.statusRow}>
           <View style={[styles.statusDot, { backgroundColor: connected ? colors.success : colors.destructive }]} />
