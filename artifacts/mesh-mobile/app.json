@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Emergency Mesh Mobile",
-    "slug": "mesh-mobile",
+    "name": "Mesh Network",
+    "slug": "meshnetwork",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mesh-mobile",
+    "scheme": "meshnetwork",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -16,11 +16,16 @@
     "ios": {
       "supportsTablet": false,
       "infoPlist": {
-        "UIBackgroundModes": ["fetch", "processing"]
-      }
+        "UIBackgroundModes": [
+          "fetch",
+          "processing"
+        ]
+      },
+      "bundleIdentifier": "com.meshnetwork.app"
     },
     "android": {
-      "useNextNotificationsApi": true
+      "useNextNotificationsApi": true,
+      "package": "com.meshnetwork.app"
     },
     "web": {
       "favicon": "./assets/images/icon.png"

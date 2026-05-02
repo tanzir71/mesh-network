@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "Emergency Mesh"
+title = "Mesh Network"
 version = "1.0.0"
 id = "artifacts/emergency-mesh"
 router = "path"

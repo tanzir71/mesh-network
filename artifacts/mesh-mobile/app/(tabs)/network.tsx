@@ -25,13 +25,14 @@ import {
   setInternetSyncEnabled,
   pullPosts,
 } from "@/services/internetSync";
+import { RETENTION_OPTIONS } from "@/services/retentionSettings";
 
 // ─── Interval options ─────────────────────────────────────────────────────────
 const INTERVALS: { label: string; value: number }[] = [
   { label: "15m", value: 15 },
   { label: "30m", value: 30 },
-  { label: "1h", value: 60 },
-  { label: "2h", value: 120 },
+  { label: "1h",  value: 60 },
+  { label: "2h",  value: 120 },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -151,24 +152,14 @@ function InternetSyncCard({ colors }: { colors: ReturnType<typeof useColors> }) 
     <View
       style={[
         styles.card,
-        {
-          backgroundColor: colors.card,
-          borderColor: enabled ? colors.primary + "55" : colors.border,
-        },
+        { backgroundColor: colors.card, borderColor: enabled ? colors.primary + "55" : colors.border },
       ]}
     >
-      {/* Header row */}
       <View style={styles.bgRow}>
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
-            INTERNET SYNC
-          </Text>
-          <Text style={[styles.bgTitle, { color: colors.foreground }]}>
-            Sync over internet
-          </Text>
-          <Text style={[styles.bgNote, { color: colors.mutedForeground }]}>
-            Push & pull updates via relay server
-          </Text>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>INTERNET SYNC</Text>
+          <Text style={[styles.bgTitle, { color: colors.foreground }]}>Sync over internet</Text>
+          <Text style={[styles.bgNote, { color: colors.mutedForeground }]}>Push & pull updates via relay server</Text>
         </View>
         <Switch
           value={enabled}
@@ -179,38 +170,30 @@ function InternetSyncCard({ colors }: { colors: ReturnType<typeof useColors> }) 
         />
       </View>
 
-      {/* Stats + status row */}
       <View style={[styles.divider, { backgroundColor: colors.border }]} />
       <View style={styles.inetStatsRow}>
         <View style={styles.inetStat}>
           <Text style={[styles.inetStatValue, { color: enabled ? colors.primary : colors.mutedForeground }]}>
             {serverPostCount}
           </Text>
-          <Text style={[styles.inetStatLabel, { color: colors.mutedForeground }]}>
-            On server
-          </Text>
+          <Text style={[styles.inetStatLabel, { color: colors.mutedForeground }]}>On server</Text>
         </View>
         <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
         <View style={styles.inetStat}>
           <Text style={[styles.inetStatValue, { color: colors.foreground }]}>
             {lastPull ? formatRelative(lastPull) : "—"}
           </Text>
-          <Text style={[styles.inetStatLabel, { color: colors.mutedForeground }]}>
-            Last pull
-          </Text>
+          <Text style={[styles.inetStatLabel, { color: colors.mutedForeground }]}>Last pull</Text>
         </View>
         <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
         <View style={styles.inetStat}>
           <Text style={[styles.inetStatValue, { color: colors.foreground }]}>
             {lastPush ? formatRelative(lastPush) : "—"}
           </Text>
-          <Text style={[styles.inetStatLabel, { color: colors.mutedForeground }]}>
-            Last push
-          </Text>
+          <Text style={[styles.inetStatLabel, { color: colors.mutedForeground }]}>Last push</Text>
         </View>
       </View>
 
-      {/* Status + manual sync button */}
       <View style={[styles.statusBox, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
         <View style={styles.statusRow}>
           <View style={[styles.statusDot, { backgroundColor: enabled ? colors.primary : colors.border }]} />
@@ -230,6 +213,82 @@ function InternetSyncCard({ colors }: { colors: ReturnType<typeof useColors> }) 
   );
 }
 
+// ─── DataRetentionCard ────────────────────────────────────────────────────────
+function DataRetentionCard({ colors }: { colors: ReturnType<typeof useColors> }) {
+  const { retentionDays, setRetention, posts } = useMesh();
+
+  // preview how many posts would survive at a given setting
+  function previewCount(days: number) {
+    if (days === 0) return posts.length;
+    const cutoff = Date.now() - days * 86_400_000;
+    return posts.filter((p) => p.timestamp >= cutoff).length;
+  }
+
+  const activeLabel =
+    RETENTION_OPTIONS.find((o) => o.days === retentionDays)?.label ?? "1yr";
+
+  return (
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View style={{ gap: 2 }}>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>DATA RETENTION</Text>
+        <Text style={[styles.bgTitle, { color: colors.foreground }]}>Keep posts for</Text>
+        <Text style={[styles.bgNote, { color: colors.mutedForeground }]}>
+          Posts older than this window are removed from storage and skipped in sync
+        </Text>
+      </View>
+
+      <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+      {/* Option grid — two rows of three */}
+      <View style={styles.retentionGrid}>
+        {RETENTION_OPTIONS.map((opt) => {
+          const active = opt.days === retentionDays;
+          return (
+            <Pressable
+              key={opt.days}
+              onPress={() => setRetention(opt.days)}
+              style={({ pressed }) => [
+                styles.retentionBtn,
+                {
+                  backgroundColor: active ? colors.primary : colors.secondary,
+                  borderColor: active ? colors.primary : colors.border,
+                  opacity: pressed ? 0.75 : 1,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.retentionBtnLabel,
+                  { color: active ? colors.primaryForeground : colors.mutedForeground },
+                ]}
+              >
+                {opt.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {/* Summary */}
+      <View style={[styles.statusBox, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+        <View style={styles.statusRow}>
+          <Feather name="database" size={13} color={colors.primary} />
+          <Text style={[styles.statusText, { color: colors.foreground }]}>
+            {posts.length === 0
+              ? "No posts stored"
+              : `${previewCount(retentionDays)} of ${posts.length} post${posts.length !== 1 ? "s" : ""} within window`}
+          </Text>
+        </View>
+        {retentionDays === 0 && (
+          <Text style={[styles.bgNote, { color: colors.mutedForeground, marginTop: 4 }]}>
+            All posts kept indefinitely
+          </Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
 // ─── BackgroundSyncCard ───────────────────────────────────────────────────────
 function BackgroundSyncCard({ colors }: { colors: ReturnType<typeof useColors> }) {
   const [enabled, setEnabled] = useState(false);
@@ -239,7 +298,6 @@ function BackgroundSyncCard({ colors }: { colors: ReturnType<typeof useColors> }
   const [syncCount, setSyncCount] = useState(0);
   const [toggling, setToggling] = useState(false);
 
-  // Reload settings whenever the tab is focused
   useFocusEffect(
     useCallback(() => {
       getBackgroundSyncSettings().then((s) => {
@@ -259,10 +317,7 @@ function BackgroundSyncCard({ colors }: { colors: ReturnType<typeof useColors> }
       if (value) {
         if (Platform.OS !== "web") {
           const granted = await requestNotifPermissions();
-          if (!granted) {
-            setToggling(false);
-            return;
-          }
+          if (!granted) { setToggling(false); return; }
         }
         await enableBackgroundSync(interval);
         setEnabled(true);
@@ -277,10 +332,7 @@ function BackgroundSyncCard({ colors }: { colors: ReturnType<typeof useColors> }
 
   const handleIntervalChange = async (mins: number) => {
     setIntervalVal(mins);
-    if (enabled) {
-      // Re-register with new interval
-      await enableBackgroundSync(mins);
-    }
+    if (enabled) await enableBackgroundSync(mins);
   };
 
   const statusText = (() => {
@@ -296,25 +348,15 @@ function BackgroundSyncCard({ colors }: { colors: ReturnType<typeof useColors> }
     <View
       style={[
         styles.card,
-        {
-          backgroundColor: colors.card,
-          borderColor: enabled ? colors.primary + "55" : colors.border,
-        },
+        { backgroundColor: colors.card, borderColor: enabled ? colors.primary + "55" : colors.border },
       ]}
     >
-      {/* Header row */}
       <View style={styles.bgRow}>
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
-            BACKGROUND SYNC
-          </Text>
-          <Text style={[styles.bgTitle, { color: colors.foreground }]}>
-            Sync when app is closed
-          </Text>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>BACKGROUND SYNC</Text>
+          <Text style={[styles.bgTitle, { color: colors.foreground }]}>Sync when app is closed</Text>
           {isWeb && (
-            <Text style={[styles.bgNote, { color: colors.mutedForeground }]}>
-              Requires Expo Go on device
-            </Text>
+            <Text style={[styles.bgNote, { color: colors.mutedForeground }]}>Requires Expo Go on device</Text>
           )}
         </View>
         <Switch
@@ -327,16 +369,11 @@ function BackgroundSyncCard({ colors }: { colors: ReturnType<typeof useColors> }
         />
       </View>
 
-      {/* Expanded when enabled */}
       {enabled && !isWeb && (
         <>
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-          {/* Interval selector */}
           <View style={{ gap: 8 }}>
-            <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
-              CHECK INTERVAL
-            </Text>
+            <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>CHECK INTERVAL</Text>
             <View style={styles.intervalRow}>
               {INTERVALS.map((opt) => (
                 <Pressable
@@ -345,10 +382,8 @@ function BackgroundSyncCard({ colors }: { colors: ReturnType<typeof useColors> }
                   style={({ pressed }) => [
                     styles.intervalBtn,
                     {
-                      backgroundColor:
-                        interval === opt.value ? colors.primary : colors.secondary,
-                      borderColor:
-                        interval === opt.value ? colors.primary : colors.border,
+                      backgroundColor: interval === opt.value ? colors.primary : colors.secondary,
+                      borderColor: interval === opt.value ? colors.primary : colors.border,
                       opacity: pressed ? 0.75 : 1,
                     },
                   ]}
@@ -356,12 +391,7 @@ function BackgroundSyncCard({ colors }: { colors: ReturnType<typeof useColors> }
                   <Text
                     style={[
                       styles.intervalText,
-                      {
-                        color:
-                          interval === opt.value
-                            ? colors.primaryForeground
-                            : colors.mutedForeground,
-                      },
+                      { color: interval === opt.value ? colors.primaryForeground : colors.mutedForeground },
                     ]}
                   >
                     {opt.label}
@@ -375,24 +405,10 @@ function BackgroundSyncCard({ colors }: { colors: ReturnType<typeof useColors> }
           </View>
 
           <View style={[styles.divider, { backgroundColor: colors.border }]} />
-
-          {/* Status */}
-          <View
-            style={[
-              styles.statusBox,
-              { backgroundColor: colors.secondary, borderColor: colors.border },
-            ]}
-          >
+          <View style={[styles.statusBox, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
             <View style={styles.statusRow}>
-              <View
-                style={[
-                  styles.statusDot,
-                  { backgroundColor: lastSync ? colors.success : colors.primary },
-                ]}
-              />
-              <Text style={[styles.statusText, { color: colors.foreground }]}>
-                {statusText}
-              </Text>
+              <View style={[styles.statusDot, { backgroundColor: lastSync ? colors.success : colors.primary }]} />
+              <Text style={[styles.statusText, { color: colors.foreground }]}>{statusText}</Text>
             </View>
             {syncCount > 0 && (
               <Text style={[styles.syncCount, { color: colors.mutedForeground }]}>
@@ -401,7 +417,6 @@ function BackgroundSyncCard({ colors }: { colors: ReturnType<typeof useColors> }
             )}
           </View>
 
-          {/* Notification hint */}
           <View style={styles.notifHint}>
             <Feather name="bell" size={12} color={colors.mutedForeground} />
             <Text style={[styles.notifHintText, { color: colors.mutedForeground }]}>
@@ -421,7 +436,7 @@ export default function NetworkScreen() {
   const insets = useSafeAreaInsets();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : 0;
+  const bottomPad = Platform.OS === "web" ? 84 : 0;
   const totalNodes = peers.length + 1;
 
   return (
@@ -429,15 +444,13 @@ export default function NetworkScreen() {
       style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={[
         styles.container,
-        { paddingTop: topPad + 16, paddingBottom: bottomPad + 100 },
+        { paddingTop: topPad + 16, paddingBottom: bottomPad + 24 },
       ]}
       showsVerticalScrollIndicator={false}
     >
       <View>
         <Text style={[styles.title, { color: colors.foreground }]}>Network Map</Text>
-        <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
-          Live mesh topology
-        </Text>
+        <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Live mesh topology</Text>
       </View>
 
       {/* Mesh topology */}
@@ -489,6 +502,9 @@ export default function NetworkScreen() {
 
       {/* Internet Sync */}
       <InternetSyncCard colors={colors} />
+
+      {/* Data Retention */}
+      <DataRetentionCard colors={colors} />
 
       {/* Background Sync */}
       <BackgroundSyncCard colors={colors} />
@@ -588,66 +604,58 @@ const styles = StyleSheet.create({
   lineDot: { width: 4, height: 4, borderRadius: 2 },
   peersRow: { flexDirection: "row", flexWrap: "wrap", gap: 24, justifyContent: "center" },
   card: { borderRadius: 14, borderWidth: 1, padding: 16, gap: 12 },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    letterSpacing: 1,
-    fontFamily: "Inter_600SemiBold",
-  },
-  // Background sync card
+  sectionLabel: { fontSize: 11, fontWeight: "600", letterSpacing: 1, fontFamily: "Inter_600SemiBold" },
   bgRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   bgTitle: { fontSize: 15, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
   bgNote: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
   intervalRow: { flexDirection: "row", gap: 8 },
-  intervalBtn: {
-    flex: 1,
+  intervalBtn: { flex: 1, paddingVertical: 8, borderRadius: 10, borderWidth: 1, alignItems: "center" },
+  intervalText: { fontSize: 13, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
+  intervalNote: { fontSize: 10, fontFamily: "Inter_400Regular" },
+  // Retention
+  retentionGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  retentionBtn: {
     paddingVertical: 8,
+    paddingHorizontal: 0,
     borderRadius: 10,
     borderWidth: 1,
     alignItems: "center",
+    width: "30%",
+    flexGrow: 1,
   },
-  intervalText: { fontSize: 13, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
-  intervalNote: { fontSize: 10, fontFamily: "Inter_400Regular" },
-  statusBox: {
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 12,
-    gap: 4,
-  },
+  retentionBtnLabel: { fontSize: 13, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
+  // Status
+  statusBox: { borderRadius: 10, borderWidth: 1, padding: 12, gap: 4 },
   statusRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   statusDot: { width: 8, height: 8, borderRadius: 4 },
   statusText: { fontSize: 13, fontFamily: "Inter_400Regular", flex: 1 },
   syncCount: { fontSize: 11, fontFamily: "Inter_400Regular", paddingLeft: 16 },
+  syncBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  syncBtnText: { fontSize: 12, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
   notifHint: { flexDirection: "row", alignItems: "center", gap: 6 },
   notifHintText: { fontSize: 11, fontFamily: "Inter_400Regular" },
+  // Internet sync stats
+  inetStatsRow: { flexDirection: "row", gap: 0 },
+  inetStat: { flex: 1, alignItems: "center", gap: 3 },
+  inetStatValue: { fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  inetStatLabel: { fontSize: 10, fontFamily: "Inter_400Regular" },
   // Node list
-  nodeItem: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 4,
-  },
-  nodeLeft: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
-  nodeRight: { alignItems: "flex-end", flex: 1 },
-  badge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  badgeText: { fontSize: 9, fontWeight: "700", fontFamily: "Inter_700Bold" },
-  onlineDot: { width: 7, height: 7, borderRadius: 4 },
-  nodeName: { fontSize: 14, fontFamily: "Inter_500Medium" },
-  nodeId: { fontSize: 11, fontFamily: "Inter_400Regular" },
+  nodeItem: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 4 },
+  nodeLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
+  nodeRight: { alignItems: "flex-end", gap: 2, flex: 1, marginLeft: 12 },
+  badge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 5 },
+  badgeText: { fontSize: 10, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  nodeName: { fontSize: 13, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
+  nodeId: { fontSize: 10, fontFamily: "Inter_400Regular" },
   nodeLoc: { fontSize: 10, fontFamily: "Inter_400Regular", maxWidth: 140, textAlign: "right" },
-  divider: { height: 1, marginVertical: 4 },
+  onlineDot: { width: 8, height: 8, borderRadius: 4 },
   emptyPeers: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8 },
   emptyPeersText: { fontSize: 13, fontFamily: "Inter_400Regular" },
-  statsRow: { flexDirection: "row", alignItems: "center" },
-  stat: { flex: 1, alignItems: "center", paddingVertical: 4 },
-  statValue: { fontSize: 24, fontWeight: "700", fontFamily: "Inter_700Bold" },
-  statLabel: { fontSize: 11, marginTop: 2, fontFamily: "Inter_400Regular" },
-  statDivider: { width: 1, height: 36 },
-  // Internet sync card
-  inetStatsRow: { flexDirection: "row", alignItems: "center" },
-  inetStat: { flex: 1, alignItems: "center", paddingVertical: 4 },
-  inetStatValue: { fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" },
-  inetStatLabel: { fontSize: 10, marginTop: 2, fontFamily: "Inter_400Regular" },
-  syncBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  syncBtnText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  // Stats
+  statsRow: { flexDirection: "row" },
+  stat: { flex: 1, alignItems: "center", gap: 4 },
+  statValue: { fontSize: 20, fontWeight: "700", fontFamily: "Inter_700Bold" },
+  statLabel: { fontSize: 11, fontFamily: "Inter_400Regular" },
+  statDivider: { width: 1, marginVertical: 4 },
+  divider: { height: 1 },
 });

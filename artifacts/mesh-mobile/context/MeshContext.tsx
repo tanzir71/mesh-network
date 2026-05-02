@@ -15,6 +15,12 @@ import {
   pullPosts as inetPullPosts,
   pushPosts as inetPushPosts,
 } from "@/services/internetSync";
+import {
+  loadRetentionDays,
+  saveRetentionDays,
+  retentionCutoff,
+  isFreshEnough,
+} from "@/services/retentionSettings";
 
 const ADJECTIVES = [
   "swift","brave","silent","iron","sharp","wild","bold","calm","keen",
@@ -95,11 +101,13 @@ type MeshContextType = {
   sosAlerts: SosAlert[];
   posts: Post[];
   connected: boolean;
+  retentionDays: number;
   sendMessage: (text: string) => void;
   sendSOS: (message?: string) => void;
   ackSOS: (alertId: string) => void;
   addPost: (text: string) => Promise<void>;
   renameNode: (name: string) => Promise<void>;
+  setRetention: (days: number) => Promise<void>;
 };
 
 const MeshContext = createContext<MeshContextType | null>(null);
@@ -110,19 +118,27 @@ const WS_URL = `wss://${process.env.EXPO_PUBLIC_DOMAIN}/api/ws/mesh`;
 
 function mergePosts(
   existing: Post[],
-  incoming: Post[]
+  incoming: Post[],
+  retDays: number
 ): { posts: Post[]; added: number } {
   const map = new Map(existing.map((p) => [p.id, p]));
   const now = Date.now();
   let added = 0;
   for (const post of incoming) {
-    if (!map.has(post.id) && post.expiresAt > now) {
+    if (
+      !map.has(post.id) &&
+      post.expiresAt > now &&
+      isFreshEnough(post.timestamp, retDays)
+    ) {
       map.set(post.id, post);
       added++;
     }
   }
+  const cutoff = retentionCutoff(retDays);
   return {
-    posts: Array.from(map.values()).sort((a, b) => b.timestamp - a.timestamp),
+    posts: Array.from(map.values())
+      .filter((p) => p.expiresAt > now && p.timestamp >= cutoff)
+      .sort((a, b) => b.timestamp - a.timestamp),
     added,
   };
 }
@@ -156,12 +172,14 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
   const [sosAlerts, setSosAlerts] = useState<SosAlert[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
   const [connected, setConnected] = useState(false);
+  const [retentionDays, setRetentionDaysState] = useState(365);
 
   const wsRef = useRef<WebSocket | null>(null);
   const myNodeRef = useRef<NodeInfo>(myNode);
   myNodeRef.current = myNode;
   const postsRef = useRef<Post[]>(posts);
   postsRef.current = posts;
+  const retentionRef = useRef(365);
 
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatInterval = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -169,19 +187,29 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
   const initialized = useRef(false);
   const postsLoaded = useRef(false);
 
-  // Load persisted posts on startup
+  // Load persisted posts + retention setting together on startup
   useEffect(() => {
-    AsyncStorage.getItem(POSTS_STORAGE_KEY).then((raw) => {
+    async function loadInitialData() {
+      const [raw, retDays] = await Promise.all([
+        AsyncStorage.getItem(POSTS_STORAGE_KEY),
+        loadRetentionDays(),
+      ]);
+      retentionRef.current = retDays;
+      setRetentionDaysState(retDays);
       if (raw) {
         try {
           const parsed: Post[] = JSON.parse(raw);
           const now = Date.now();
-          const valid = parsed.filter((p) => p.expiresAt > now);
+          const cutoff = retentionCutoff(retDays);
+          const valid = parsed.filter(
+            (p) => p.expiresAt > now && p.timestamp >= cutoff
+          );
           setPosts(valid);
         } catch {}
       }
       postsLoaded.current = true;
-    });
+    }
+    loadInitialData();
   }, []);
 
   // Persist posts whenever they change
@@ -239,14 +267,13 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Pull posts from server and merge into local state
   async function pullFromServer() {
     try {
       const { enabled } = await getInternetSyncStatus();
       if (!enabled) return;
       const serverPosts = await inetPullPosts();
       if (serverPosts.length > 0) {
-        setPosts((prev) => mergePosts(prev, serverPosts).posts);
+        setPosts((prev) => mergePosts(prev, serverPosts, retentionRef.current).posts);
       }
     } catch {}
   }
@@ -273,7 +300,6 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
             return next;
           });
         }, 5000);
-        // Pull server posts on every connection
         pullFromServer();
       };
 
@@ -337,10 +363,10 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
       if (data.post.authorId === myNodeRef.current.id) return;
       const now = Date.now();
       if (data.post.expiresAt <= now) return;
+      if (!isFreshEnough(data.post.timestamp, retentionRef.current)) return;
       setPosts((prev) => {
         if (prev.find((p) => p.id === data.post.id)) return prev;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        // Push received post to server if internet sync enabled
         getInternetSyncStatus().then(({ enabled }) => {
           if (enabled) inetPushPosts([data.post]).catch(() => {});
         });
@@ -348,10 +374,9 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
       });
     } else if (data.type === "POST_SYNC") {
       setPosts((prev) => {
-        const result = mergePosts(prev, data.posts);
+        const result = mergePosts(prev, data.posts, retentionRef.current);
         if (result.added > 0) {
           onSyncComplete(data.fromName, result.added).catch(() => {});
-          // Push new posts to server
           const newPosts = data.posts.filter((p) =>
             result.posts.find((rp) => rp.id === p.id)
           );
@@ -439,17 +464,42 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     setPosts((prev) => [post, ...prev]);
     send({ type: "POST_BROADCAST", post });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // Push to server if internet sync enabled
     getInternetSyncStatus().then(({ enabled }) => {
       if (enabled) inetPushPosts([post]).catch(() => {});
     });
+  }, []);
+
+  const setRetention = useCallback(async (days: number) => {
+    await saveRetentionDays(days);
+    retentionRef.current = days;
+    setRetentionDaysState(days);
+    // Immediately prune posts that now fall outside the new window
+    const cutoff = retentionCutoff(days);
+    const now = Date.now();
+    setPosts((prev) =>
+      prev.filter((p) => p.expiresAt > now && p.timestamp >= cutoff)
+    );
   }, []);
 
   const peerList = Array.from(peers.values());
 
   return (
     <MeshContext.Provider
-      value={{ myNode, peers: peerList, messages, sosAlerts, posts, connected, sendMessage, sendSOS, ackSOS, addPost, renameNode }}
+      value={{
+        myNode,
+        peers: peerList,
+        messages,
+        sosAlerts,
+        posts,
+        connected,
+        retentionDays,
+        sendMessage,
+        sendSOS,
+        ackSOS,
+        addPost,
+        renameNode,
+        setRetention,
+      }}
     >
       {children}
     </MeshContext.Provider>

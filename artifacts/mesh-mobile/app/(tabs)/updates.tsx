@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -18,6 +18,8 @@ import type { Post } from "@/context/MeshContext";
 
 const MAX_CHARS = 280;
 
+// ─── Date helpers ─────────────────────────────────────────────────────────────
+
 function formatRelative(ts: number): string {
   const diff = Date.now() - ts;
   if (diff < 60_000) return "just now";
@@ -26,6 +28,54 @@ function formatRelative(ts: number): string {
   if (diff < 604_800_000) return `${Math.floor(diff / 86_400_000)}d ago`;
   return new Date(ts).toLocaleDateString();
 }
+
+function getDayKey(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function getDayLabel(ts: number): string {
+  const now = new Date();
+  const d = new Date(ts);
+  const todayKey = getDayKey(Date.now());
+  const postKey = getDayKey(ts);
+  const yesterdayTs = Date.now() - 86_400_000;
+  const yesterdayKey = getDayKey(yesterdayTs);
+
+  if (postKey === todayKey) return "Today";
+  if (postKey === yesterdayKey) return "Yesterday";
+
+  const diffDays = Math.floor((Date.now() - ts) / 86_400_000);
+  if (diffDays < 7) {
+    return d.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" });
+  }
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString([], { month: "long", day: "numeric" });
+  }
+  return d.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+}
+
+// ─── List item types ──────────────────────────────────────────────────────────
+
+type ListItem =
+  | { kind: "divider"; label: string; key: string }
+  | { kind: "post"; post: Post };
+
+function buildTimeline(posts: Post[]): ListItem[] {
+  const items: ListItem[] = [];
+  let lastKey = "";
+  for (const post of posts) {
+    const key = getDayKey(post.timestamp);
+    if (key !== lastKey) {
+      lastKey = key;
+      items.push({ kind: "divider", label: getDayLabel(post.timestamp), key: `divider-${key}` });
+    }
+    items.push({ kind: "post", post });
+  }
+  return items;
+}
+
+// ─── PostCard ─────────────────────────────────────────────────────────────────
 
 function PostCard({
   post,
@@ -77,6 +127,22 @@ function PostCard({
     </View>
   );
 }
+
+// ─── DateDivider ─────────────────────────────────────────────────────────────
+
+function DateDivider({ label, colors }: { label: string; colors: ReturnType<typeof useColors> }) {
+  return (
+    <View style={styles.dividerRow}>
+      <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+      <Text style={[styles.dividerLabel, { color: colors.mutedForeground, backgroundColor: colors.background }]}>
+        {label}
+      </Text>
+      <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+    </View>
+  );
+}
+
+// ─── Composer ─────────────────────────────────────────────────────────────────
 
 function Composer({
   colors,
@@ -154,6 +220,8 @@ function Composer({
   );
 }
 
+// ─── EmptyTimeline ────────────────────────────────────────────────────────────
+
 function EmptyTimeline({ colors }: { colors: ReturnType<typeof useColors> }) {
   return (
     <View style={styles.empty}>
@@ -166,6 +234,8 @@ function EmptyTimeline({ colors }: { colors: ReturnType<typeof useColors> }) {
   );
 }
 
+// ─── Screen ───────────────────────────────────────────────────────────────────
+
 export default function UpdatesScreen() {
   const { myNode, posts, addPost } = useMesh();
   const colors = useColors();
@@ -174,6 +244,8 @@ export default function UpdatesScreen() {
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 0 : insets.bottom;
+
+  const timelineItems = useMemo(() => buildTimeline(posts), [posts]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -236,8 +308,10 @@ export default function UpdatesScreen() {
             <EmptyTimeline colors={colors} />
           ) : (
             <FlatList
-              data={posts}
-              keyExtractor={(p) => p.id}
+              data={timelineItems}
+              keyExtractor={(item) =>
+                item.kind === "divider" ? item.key : item.post.id
+              }
               contentContainerStyle={{
                 paddingHorizontal: 14,
                 paddingTop: 10,
@@ -245,9 +319,17 @@ export default function UpdatesScreen() {
                 gap: 10,
               }}
               showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <PostCard post={item} isMe={item.authorId === myNode.id} colors={colors} />
-              )}
+              renderItem={({ item }) =>
+                item.kind === "divider" ? (
+                  <DateDivider label={item.label} colors={colors} />
+                ) : (
+                  <PostCard
+                    post={item.post}
+                    isMe={item.post.authorId === myNode.id}
+                    colors={colors}
+                  />
+                )
+              }
             />
           )
         ) : (
@@ -302,6 +384,21 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { fontSize: 16, fontWeight: "600" },
   emptySub: { fontSize: 13, textAlign: "center", lineHeight: 19 },
+  // Date divider
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginVertical: 4,
+  },
+  dividerLine: { flex: 1, height: 1 },
+  dividerLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+    paddingHorizontal: 4,
+  },
+  // Post card
   postCard: {
     borderRadius: 14,
     borderWidth: 1,
@@ -329,6 +426,7 @@ const styles = StyleSheet.create({
   postText: { fontSize: 15, lineHeight: 22 },
   postLocationRow: { flexDirection: "row", alignItems: "center", gap: 4 },
   postCoords: { fontSize: 11 },
+  // Composer
   composerWrapper: {
     position: "absolute",
     bottom: 0,

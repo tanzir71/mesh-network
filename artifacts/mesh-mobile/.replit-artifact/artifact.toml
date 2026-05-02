@@ -1,6 +1,6 @@
 kind = "mobile"
 previewPath = "/mesh-mobile/"
-title = "Emergency Mesh Mobile"
+title = "Mesh Network"
 version = "1.0.0"
 id = "artifacts/mesh-mobile"
 router = "expo-domain"
