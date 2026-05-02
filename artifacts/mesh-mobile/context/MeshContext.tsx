@@ -28,6 +28,9 @@ function randomName() {
   return "Node-" + NATO[Math.floor(Math.random() * NATO.length)];
 }
 
+const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
+const POSTS_STORAGE_KEY = "mesh_posts_v1";
+
 export type NodeInfo = {
   id: string;
   name: string;
@@ -51,22 +54,37 @@ export type SosAlert = {
   acked: boolean;
 };
 
+export type Post = {
+  id: string;
+  authorId: string;
+  authorName: string;
+  text: string;
+  lat: number | null;
+  lng: number | null;
+  timestamp: number;
+  expiresAt: number;
+};
+
 type MeshMessage =
   | { type: "ANNOUNCE" | "HEARTBEAT"; node: NodeInfo }
   | { type: "GOODBYE"; id: string }
   | { type: "CHAT"; msg: ChatMessage }
   | { type: "SOS"; alert: SosAlert }
-  | { type: "SOS_ACK"; alertId: string; from: string };
+  | { type: "SOS_ACK"; alertId: string; from: string }
+  | { type: "POST_BROADCAST"; post: Post }
+  | { type: "POST_SYNC"; posts: Post[] };
 
 type MeshContextType = {
   myNode: NodeInfo;
   peers: NodeInfo[];
   messages: ChatMessage[];
   sosAlerts: SosAlert[];
+  posts: Post[];
   connected: boolean;
   sendMessage: (text: string) => void;
   sendSOS: (message?: string) => void;
   ackSOS: (alertId: string) => void;
+  addPost: (text: string) => Promise<void>;
 };
 
 const MeshContext = createContext<MeshContextType | null>(null);
@@ -75,37 +93,87 @@ const PEER_TIMEOUT = 10000;
 const HEARTBEAT_MS = 3000;
 const WS_URL = `wss://${process.env.EXPO_PUBLIC_DOMAIN}/api/ws/mesh`;
 
-export function MeshProvider({ children }: { children: React.ReactNode }) {
-  const [myNode, setMyNode] = useState<NodeInfo>({
-    id: "",
-    name: "",
-    location: "Unavailable",
+function mergePosts(existing: Post[], incoming: Post[]): Post[] {
+  const map = new Map(existing.map((p) => [p.id, p]));
+  const now = Date.now();
+  for (const post of incoming) {
+    if (!map.has(post.id) && post.expiresAt > now) {
+      map.set(post.id, post);
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => b.timestamp - a.timestamp);
+}
+
+async function getCurrentCoords(): Promise<{ lat: number; lng: number } | null> {
+  if (Platform.OS !== "web") {
+    try {
+      const Location = await import("expo-location");
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status === "granted") {
+        const pos = await Location.getCurrentPositionAsync({ accuracy: 4 });
+        return { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      }
+    } catch {}
+    return null;
+  }
+  return new Promise((resolve) => {
+    if (!navigator?.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => resolve(null),
+      { timeout: 5000 }
+    );
   });
+}
+
+export function MeshProvider({ children }: { children: React.ReactNode }) {
+  const [myNode, setMyNode] = useState<NodeInfo>({ id: "", name: "", location: "Unavailable" });
   const [peers, setPeers] = useState<Map<string, NodeInfo & { lastSeen: number }>>(new Map());
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sosAlerts, setSosAlerts] = useState<SosAlert[]>([]);
+  const [posts, setPosts] = useState<Post[]>([]);
+
   const [connected, setConnected] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const myNodeRef = useRef<NodeInfo>(myNode);
   myNodeRef.current = myNode;
+  const postsRef = useRef<Post[]>(posts);
+  postsRef.current = posts;
+
   const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const peerCleanupInterval = useRef<ReturnType<typeof setInterval> | null>(null);
   const initialized = useRef(false);
+  const postsLoaded = useRef(false);
+
+  // Load persisted posts on startup
+  useEffect(() => {
+    AsyncStorage.getItem(POSTS_STORAGE_KEY).then((raw) => {
+      if (raw) {
+        try {
+          const parsed: Post[] = JSON.parse(raw);
+          const now = Date.now();
+          const valid = parsed.filter((p) => p.expiresAt > now);
+          setPosts(valid);
+        } catch {}
+      }
+      postsLoaded.current = true;
+    });
+  }, []);
+
+  // Persist posts whenever they change (after initial load)
+  useEffect(() => {
+    if (!postsLoaded.current) return;
+    AsyncStorage.setItem(POSTS_STORAGE_KEY, JSON.stringify(posts)).catch(() => {});
+  }, [posts]);
 
   useEffect(() => {
     async function initNode() {
       let id = await AsyncStorage.getItem("mesh_node_id");
       let name = await AsyncStorage.getItem("mesh_node_name");
-      if (!id) {
-        id = randomId();
-        await AsyncStorage.setItem("mesh_node_id", id);
-      }
-      if (!name) {
-        name = randomName();
-        await AsyncStorage.setItem("mesh_node_name", name);
-      }
+      if (!id) { id = randomId(); await AsyncStorage.setItem("mesh_node_id", id); }
+      if (!name) { name = randomName(); await AsyncStorage.setItem("mesh_node_name", name); }
       setMyNode((prev) => ({ ...prev, id, name: name! }));
     }
     initNode();
@@ -188,27 +256,28 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
         reconnectTimeout.current = setTimeout(connect, 3000);
       };
 
-      ws.onerror = () => {
-        ws.close();
-      };
+      ws.onerror = () => { ws.close(); };
     } catch {}
   }
 
   function handleMessage(data: MeshMessage) {
     if (data.type === "ANNOUNCE" || data.type === "HEARTBEAT") {
       if (data.node.id === myNodeRef.current.id) return;
+      const isNew = data.type === "ANNOUNCE";
       setPeers((prev) =>
         new Map(prev).set(data.node.id, { ...data.node, lastSeen: Date.now() })
       );
-      if (data.type === "ANNOUNCE") {
+      if (isNew) {
         send({ type: "HEARTBEAT", node: myNodeRef.current });
+        // Share all my posts with the new peer
+        if (postsRef.current.length > 0) {
+          setTimeout(() => {
+            send({ type: "POST_SYNC", posts: postsRef.current });
+          }, 500);
+        }
       }
     } else if (data.type === "GOODBYE") {
-      setPeers((prev) => {
-        const m = new Map(prev);
-        m.delete(data.id);
-        return m;
-      });
+      setPeers((prev) => { const m = new Map(prev); m.delete(data.id); return m; });
     } else if (data.type === "CHAT") {
       if (data.msg.fromId === myNodeRef.current.id) return;
       setMessages((prev) => [data.msg, ...prev]);
@@ -224,6 +293,17 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
       setSosAlerts((prev) =>
         prev.map((a) => (a.id === data.alertId ? { ...a, acked: true } : a))
       );
+    } else if (data.type === "POST_BROADCAST") {
+      if (data.post.authorId === myNodeRef.current.id) return;
+      const now = Date.now();
+      if (data.post.expiresAt <= now) return;
+      setPosts((prev) => {
+        if (prev.find((p) => p.id === data.post.id)) return prev;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        return [data.post, ...prev].sort((a, b) => b.timestamp - a.timestamp);
+      });
+    } else if (data.type === "POST_SYNC") {
+      setPosts((prev) => mergePosts(prev, data.posts));
     }
   }
 
@@ -272,11 +352,29 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, []);
 
+  const addPost = useCallback(async (text: string) => {
+    const coords = await getCurrentCoords();
+    const now = Date.now();
+    const post: Post = {
+      id: now.toString() + Math.random().toString(36).substring(2, 7),
+      authorId: myNodeRef.current.id,
+      authorName: myNodeRef.current.name,
+      text: text.slice(0, 280),
+      lat: coords?.lat ?? null,
+      lng: coords?.lng ?? null,
+      timestamp: now,
+      expiresAt: now + ONE_YEAR_MS,
+    };
+    setPosts((prev) => [post, ...prev]);
+    send({ type: "POST_BROADCAST", post });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }, []);
+
   const peerList = Array.from(peers.values());
 
   return (
     <MeshContext.Provider
-      value={{ myNode, peers: peerList, messages, sosAlerts, connected, sendMessage, sendSOS, ackSOS }}
+      value={{ myNode, peers: peerList, messages, sosAlerts, posts, connected, sendMessage, sendSOS, ackSOS, addPost }}
     >
       {children}
     </MeshContext.Provider>
