@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Emergency Mesh"
+version = "1.0.0"
+id = "artifacts/emergency-mesh"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 19423
+
+[services.development]
+run = "pnpm --filter @workspace/emergency-mesh run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/emergency-mesh", "run", "build" ]
+publicDir = "artifacts/emergency-mesh/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "19423"
+BASE_PATH = "/"
