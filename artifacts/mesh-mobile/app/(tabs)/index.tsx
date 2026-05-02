@@ -1,10 +1,12 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
@@ -50,15 +52,38 @@ function PulseRing({ color }: { color: string }) {
 }
 
 export default function HomeScreen() {
-  const { myNode, peers, sosAlerts, connected } = useMesh();
+  const { myNode, peers, sosAlerts, connected, renameNode } = useMesh();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const activeSos = sosAlerts.filter((a) => !a.acked).length;
+
+  const [editing, setEditing] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const inputRef = useRef<TextInput>(null);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : 0;
 
   const styles = makeStyles(colors);
+
+  function startEdit() {
+    setNameInput(myNode.name);
+    setEditing(true);
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }
+
+  async function confirmRename() {
+    const trimmed = nameInput.trim();
+    if (trimmed && trimmed !== myNode.name) {
+      await renameNode(trimmed);
+    }
+    setEditing(false);
+  }
+
+  function cancelEdit() {
+    setEditing(false);
+    setNameInput("");
+  }
 
   return (
     <ScrollView
@@ -118,15 +143,47 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      {/* YOUR NODE card */}
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <Feather name="cpu" size={14} color={colors.primary} />
-          <Text style={[styles.cardLabel, { marginLeft: 6 }]}>YOUR NODE</Text>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <Feather name="cpu" size={14} color={colors.primary} />
+            <Text style={[styles.cardLabel, { marginLeft: 6 }]}>YOUR NODE</Text>
+          </View>
         </View>
-        <View style={styles.nodeRow}>
+
+        {/* Name row — tappable */}
+        <Pressable onPress={startEdit} style={styles.nodeRow}>
           <Text style={styles.nodeKey}>Name</Text>
-          <Text style={styles.nodeValue}>{myNode.name || "Initializing..."}</Text>
-        </View>
+          {editing ? (
+            <View style={styles.renameRow}>
+              <TextInput
+                ref={inputRef}
+                value={nameInput}
+                onChangeText={setNameInput}
+                style={[styles.renameInput, { color: colors.foreground, borderColor: colors.primary, backgroundColor: colors.secondary }]}
+                autoCapitalize="none"
+                autoCorrect={false}
+                maxLength={32}
+                returnKeyType="done"
+                onSubmitEditing={confirmRename}
+                selectTextOnFocus
+              />
+              <Pressable onPress={confirmRename} hitSlop={8}>
+                <Feather name="check" size={18} color={colors.success} />
+              </Pressable>
+              <Pressable onPress={cancelEdit} hitSlop={8}>
+                <Feather name="x" size={18} color={colors.mutedForeground} />
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.renameRow}>
+              <Text style={styles.nodeValue}>{myNode.name || "Initializing..."}</Text>
+              <Feather name="edit-2" size={13} color={colors.mutedForeground} />
+            </View>
+          )}
+        </Pressable>
+
         <View style={styles.divider} />
         <View style={styles.nodeRow}>
           <Text style={styles.nodeKey}>ID</Text>
@@ -201,18 +258,29 @@ function makeStyles(colors: ReturnType<typeof useColors>) {
     nodeValue: { fontSize: 13, color: colors.foreground, fontFamily: "Inter_500Medium", maxWidth: 200, textAlign: "right" as const },
     mono: { fontFamily: "Inter_400Regular", fontSize: 12, backgroundColor: colors.secondary, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
     divider: { height: 1, backgroundColor: colors.border },
+    // Rename row
+    renameRow: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8, flex: 1, justifyContent: "flex-end" as const },
+    renameInput: {
+      flex: 1,
+      maxWidth: 160,
+      fontSize: 13,
+      fontFamily: "Inter_500Medium",
+      borderWidth: 1,
+      borderRadius: 8,
+      paddingHorizontal: 10,
+      paddingVertical: Platform.OS === "ios" ? 6 : 4,
+      textAlign: "right" as const,
+    },
+    // Peers
     peerRow: { flexDirection: "row" as const, justifyContent: "space-between" as const, alignItems: "center" as const, paddingVertical: 8 },
-    peerLeft: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8 },
+    peerLeft: { flexDirection: "row" as const, alignItems: "center" as const, gap: 8, flex: 1 },
     onlineDot: { width: 7, height: 7, borderRadius: 4 },
     peerName: { fontSize: 14, color: colors.foreground, fontFamily: "Inter_500Medium" },
-    peerIdText: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
-    peerLocation: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
-    peerInfo: { flex: 1, marginLeft: 8 },
-    peerNameText: { fontSize: 14, color: colors.foreground, fontFamily: "Inter_500Medium" },
+    peerId: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
+    // Scan card
     scanCard: { alignItems: "center" as const, paddingVertical: 28 },
     scanIcon: { width: 48, height: 48, alignItems: "center" as const, justifyContent: "center" as const, marginBottom: 12 },
     scanText: { fontSize: 14, fontWeight: "600" as const, color: colors.foreground, fontFamily: "Inter_600SemiBold" },
     scanSub: { fontSize: 12, color: colors.mutedForeground, textAlign: "center" as const, marginTop: 4, fontFamily: "Inter_400Regular" },
-    peerId: { fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
   });
 }

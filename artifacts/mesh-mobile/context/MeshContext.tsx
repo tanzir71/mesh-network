@@ -16,11 +16,17 @@ import {
   pushPosts as inetPushPosts,
 } from "@/services/internetSync";
 
-const NATO = [
-  "Alpha","Bravo","Charlie","Delta","Echo","Foxtrot","Golf","Hotel",
-  "India","Juliet","Kilo","Lima","Mike","November","Oscar","Papa",
-  "Quebec","Romeo","Sierra","Tango","Uniform","Victor","Whiskey",
-  "Xray","Yankee","Zulu",
+const ADJECTIVES = [
+  "swift","brave","silent","iron","sharp","wild","bold","calm","keen",
+  "lone","sage","grey","deep","fast","clear","storm","frost","ash",
+  "jade","steel","amber","crimson","cobalt","ember","hollow","noble",
+  "polar","rogue","shadow","stone","thorn","void","wren","zenith",
+];
+const ANIMALS = [
+  "wolf","hawk","bear","fox","owl","elk","ram","crow","lynx","seal",
+  "crane","raven","falcon","cobra","viper","eagle","shark","bison",
+  "puma","heron","marten","ibis","condor","osprey","kestrel","dingo",
+  "ferret","jackal","mink","otter","stoat","vole","weasel","badger",
 ];
 
 function randomId(len = 8) {
@@ -31,7 +37,9 @@ function randomId(len = 8) {
 }
 
 function randomName() {
-  return "Node-" + NATO[Math.floor(Math.random() * NATO.length)];
+  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+  const animal = ANIMALS[Math.floor(Math.random() * ANIMALS.length)];
+  return `${adj}-${animal}`;
 }
 
 const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
@@ -91,6 +99,7 @@ type MeshContextType = {
   sendSOS: (message?: string) => void;
   ackSOS: (alertId: string) => void;
   addPost: (text: string) => Promise<void>;
+  renameNode: (name: string) => Promise<void>;
 };
 
 const MeshContext = createContext<MeshContextType | null>(null);
@@ -400,6 +409,20 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, []);
 
+  const renameNode = useCallback(async (name: string) => {
+    const trimmed = name.trim().slice(0, 32);
+    if (!trimmed) return;
+    await AsyncStorage.setItem("mesh_node_name", trimmed);
+    setMyNode((prev) => {
+      const updated = { ...prev, name: trimmed };
+      myNodeRef.current = updated;
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "ANNOUNCE", node: updated }));
+      }
+      return updated;
+    });
+  }, []);
+
   const addPost = useCallback(async (text: string) => {
     const coords = await getCurrentCoords();
     const now = Date.now();
@@ -426,7 +449,7 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <MeshContext.Provider
-      value={{ myNode, peers: peerList, messages, sosAlerts, posts, connected, sendMessage, sendSOS, ackSOS, addPost }}
+      value={{ myNode, peers: peerList, messages, sosAlerts, posts, connected, sendMessage, sendSOS, ackSOS, addPost, renameNode }}
     >
       {children}
     </MeshContext.Provider>
