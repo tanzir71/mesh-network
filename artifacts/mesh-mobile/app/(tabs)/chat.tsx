@@ -49,7 +49,7 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const bottomPad = Platform.OS === "web" ? 0 : insets.bottom;
 
   const handleSend = () => {
     const text = input.trim();
@@ -58,71 +58,95 @@ export default function ChatScreen() {
     setInput("");
   };
 
+  const InputBar = (
+    <View style={[styles.inputBar, { borderTopColor: colors.border, backgroundColor: colors.card, paddingBottom: bottomPad + 8 }]}>
+      <TextInput
+        style={[styles.input, { backgroundColor: colors.secondary, color: colors.foreground, borderColor: colors.border }]}
+        value={input}
+        onChangeText={setInput}
+        onSubmitEditing={handleSend}
+        placeholder={peers.length === 0 ? "Connect peers to chat..." : "Message..."}
+        placeholderTextColor={colors.mutedForeground}
+        returnKeyType="send"
+        blurOnSubmit={false}
+      />
+      <Pressable
+        onPress={handleSend}
+        disabled={!input.trim()}
+        style={({ pressed }) => [
+          styles.sendBtn,
+          { backgroundColor: colors.primary, opacity: pressed || !input.trim() ? 0.5 : 1 },
+        ]}
+      >
+        <Feather name="send" size={18} color={colors.primaryForeground} />
+      </Pressable>
+    </View>
+  );
+
+  const Header = (
+    <View style={[styles.header, { paddingTop: topPad + 12, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
+      <Text style={[styles.headerTitle, { color: colors.foreground }]}>Mesh Chat</Text>
+      <View style={styles.headerBadge}>
+        <View style={[styles.dot, { backgroundColor: peers.length > 0 ? colors.success : colors.mutedForeground }]} />
+        <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
+          {peers.length === 0 ? "No peers" : `${peers.length} peer${peers.length !== 1 ? "s" : ""}`}
+        </Text>
+      </View>
+    </View>
+  );
+
+  const MessageArea = messages.length === 0 ? (
+    <View style={styles.empty}>
+      <Feather name="message-square" size={40} color={colors.border} />
+      <Text style={[styles.emptyTitle, { color: colors.mutedForeground }]}>No messages yet</Text>
+      <Text style={[styles.emptySub, { color: colors.border }]}>
+        {peers.length === 0 ? "Connect peers to start chatting" : "Send the first message"}
+      </Text>
+    </View>
+  ) : (
+    <FlatList
+      data={messages}
+      keyExtractor={(m) => m.id}
+      inverted
+      contentContainerStyle={{ padding: 16, gap: 4, paddingTop: 8 }}
+      showsVerticalScrollIndicator={false}
+      keyboardDismissMode="interactive"
+      keyboardShouldPersistTaps="handled"
+      renderItem={({ item }) => (
+        <MessageBubble
+          msg={item}
+          isMe={item.fromId === myNode.id}
+          colors={colors}
+        />
+      )}
+    />
+  );
+
+  // Web: plain flex layout — no KAV needed (no mobile keyboard).
+  // The web tab bar is 84px tall and fixed at the viewport bottom, overlapping
+  // the last 84px of screen content. Add a spacer BELOW the inputBar so the
+  // bar itself is pushed up into the visible zone above the tab bar.
+  if (Platform.OS === "web") {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        {Header}
+        <View style={{ flex: 1 }}>{MessageArea}</View>
+        {InputBar}
+        <View style={{ height: 84 }} />
+      </View>
+    );
+  }
+
+  // Native: KeyboardAvoidingView keeps input above the software keyboard
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
       behavior="padding"
       keyboardVerticalOffset={0}
     >
-      <View style={[styles.header, { paddingTop: topPad + 12, backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>Mesh Chat</Text>
-        <View style={styles.headerBadge}>
-          <View style={[styles.dot, { backgroundColor: peers.length > 0 ? colors.success : colors.mutedForeground }]} />
-          <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
-            {peers.length === 0 ? "No peers" : `${peers.length} peer${peers.length !== 1 ? "s" : ""}`}
-          </Text>
-        </View>
-      </View>
-
-      {messages.length === 0 ? (
-        <View style={styles.empty}>
-          <Feather name="message-square" size={40} color={colors.border} />
-          <Text style={[styles.emptyTitle, { color: colors.mutedForeground }]}>No messages yet</Text>
-          <Text style={[styles.emptySub, { color: colors.border }]}>
-            {peers.length === 0 ? "Connect peers to start chatting" : "Send the first message"}
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={messages}
-          keyExtractor={(m) => m.id}
-          inverted
-          contentContainerStyle={{ padding: 16, gap: 4, paddingTop: 8 }}
-          showsVerticalScrollIndicator={false}
-          keyboardDismissMode="interactive"
-          keyboardShouldPersistTaps="handled"
-          renderItem={({ item }) => (
-            <MessageBubble
-              msg={item}
-              isMe={item.fromId === myNode.id}
-              colors={colors}
-            />
-          )}
-        />
-      )}
-
-      <View style={[styles.inputBar, { borderTopColor: colors.border, backgroundColor: colors.card, paddingBottom: bottomPad + 8 }]}>
-        <TextInput
-          style={[styles.input, { backgroundColor: colors.secondary, color: colors.foreground, borderColor: colors.border }]}
-          value={input}
-          onChangeText={setInput}
-          onSubmitEditing={handleSend}
-          placeholder={peers.length === 0 ? "Connect peers to chat..." : "Message..."}
-          placeholderTextColor={colors.mutedForeground}
-          returnKeyType="send"
-          blurOnSubmit={false}
-        />
-        <Pressable
-          onPress={handleSend}
-          disabled={!input.trim()}
-          style={({ pressed }) => [
-            styles.sendBtn,
-            { backgroundColor: colors.primary, opacity: pressed || !input.trim() ? 0.5 : 1 },
-          ]}
-        >
-          <Feather name="send" size={18} color={colors.primaryForeground} />
-        </Pressable>
-      </View>
+      {Header}
+      {MessageArea}
+      {InputBar}
     </KeyboardAvoidingView>
   );
 }

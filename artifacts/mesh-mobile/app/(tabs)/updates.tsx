@@ -173,7 +173,7 @@ export default function UpdatesScreen() {
   const [view, setView] = useState<"timeline" | "map">("timeline");
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
+  const bottomPad = Platform.OS === "web" ? 0 : insets.bottom;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -257,7 +257,7 @@ export default function UpdatesScreen() {
 
       {/* Composer — pinned at bottom, timeline view only */}
       {view === "timeline" && (
-        <View style={[styles.composerWrapper, { paddingBottom: bottomPad + 65 }]}>
+        <View style={[styles.composerWrapper, { paddingBottom: Platform.OS === "web" ? 0 : bottomPad + 49 }]}>
           <Composer colors={colors} onPost={addPost} />
         </View>
       )}
