@@ -9,6 +9,7 @@ import React, {
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
+import { onPeerDetected, onSyncComplete } from "@/services/backgroundSync";
 
 const NATO = [
   "Alpha","Bravo","Charlie","Delta","Echo","Foxtrot","Golf","Hotel",
@@ -72,7 +73,7 @@ type MeshMessage =
   | { type: "SOS"; alert: SosAlert }
   | { type: "SOS_ACK"; alertId: string; from: string }
   | { type: "POST_BROADCAST"; post: Post }
-  | { type: "POST_SYNC"; posts: Post[] };
+  | { type: "POST_SYNC"; posts: Post[]; fromName: string };
 
 type MeshContextType = {
   myNode: NodeInfo;
@@ -93,15 +94,23 @@ const PEER_TIMEOUT = 10000;
 const HEARTBEAT_MS = 3000;
 const WS_URL = `wss://${process.env.EXPO_PUBLIC_DOMAIN}/api/ws/mesh`;
 
-function mergePosts(existing: Post[], incoming: Post[]): Post[] {
+function mergePosts(
+  existing: Post[],
+  incoming: Post[]
+): { posts: Post[]; added: number } {
   const map = new Map(existing.map((p) => [p.id, p]));
   const now = Date.now();
+  let added = 0;
   for (const post of incoming) {
     if (!map.has(post.id) && post.expiresAt > now) {
       map.set(post.id, post);
+      added++;
     }
   }
-  return Array.from(map.values()).sort((a, b) => b.timestamp - a.timestamp);
+  return {
+    posts: Array.from(map.values()).sort((a, b) => b.timestamp - a.timestamp),
+    added,
+  };
 }
 
 async function getCurrentCoords(): Promise<{ lat: number; lng: number } | null> {
@@ -132,7 +141,6 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sosAlerts, setSosAlerts] = useState<SosAlert[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
-
   const [connected, setConnected] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -162,7 +170,7 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // Persist posts whenever they change (after initial load)
+  // Persist posts whenever they change
   useEffect(() => {
     if (!postsLoaded.current) return;
     AsyncStorage.setItem(POSTS_STORAGE_KEY, JSON.stringify(posts)).catch(() => {});
@@ -269,10 +277,16 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
       );
       if (isNew) {
         send({ type: "HEARTBEAT", node: myNodeRef.current });
-        // Share all my posts with the new peer
+        // Notify background sync of new peer
+        onPeerDetected(data.node.name).catch(() => {});
+        // Share posts after brief delay
         if (postsRef.current.length > 0) {
           setTimeout(() => {
-            send({ type: "POST_SYNC", posts: postsRef.current });
+            send({
+              type: "POST_SYNC",
+              posts: postsRef.current,
+              fromName: myNodeRef.current.name,
+            });
           }, 500);
         }
       }
@@ -303,7 +317,14 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
         return [data.post, ...prev].sort((a, b) => b.timestamp - a.timestamp);
       });
     } else if (data.type === "POST_SYNC") {
-      setPosts((prev) => mergePosts(prev, data.posts));
+      setPosts((prev) => {
+        const result = mergePosts(prev, data.posts);
+        // Notify background sync of completed sync
+        if (result.added > 0) {
+          onSyncComplete(data.fromName, result.added).catch(() => {});
+        }
+        return result.posts;
+      });
     }
   }
 

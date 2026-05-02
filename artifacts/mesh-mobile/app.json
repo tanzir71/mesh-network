@@ -14,9 +14,14 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "infoPlist": {
+        "UIBackgroundModes": ["fetch", "processing"]
+      }
     },
-    "android": {},
+    "android": {
+      "useNextNotificationsApi": true
+    },
     "web": {
       "favicon": "./assets/images/icon.png"
     },
@@ -28,7 +33,14 @@
         }
       ],
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "color": "#00c8ff",
+          "sounds": []
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
