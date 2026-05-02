@@ -257,7 +257,7 @@ export default function UpdatesScreen() {
 
       {/* Composer — pinned at bottom, timeline view only */}
       {view === "timeline" && (
-        <View style={[styles.composerWrapper, { paddingBottom: Platform.OS === "web" ? 0 : bottomPad + 49 }]}>
+        <View style={[styles.composerWrapper, { paddingBottom: Platform.OS === "web" ? 84 : bottomPad + 49 }]}>
           <Composer colors={colors} onPost={addPost} />
         </View>
       )}
