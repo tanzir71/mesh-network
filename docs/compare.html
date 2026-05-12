@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emergency Mesh — Comparison</title>
+    <style>
+        :root {
+            --bg: #000;
+            --fg: #fff;
+            --muted: #a3a3a3;
+            --border: #1f1f1f;
+            --panel: #0a0a0a;
+        }
+        * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--fg);
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+            line-height: 1.5;
+        }
+        a { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; }
+        a:hover { opacity: 0.85; }
+        .wrap { max-width: 960px; margin: 0 auto; padding: 32px 20px 80px; }
+        .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+        .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; }
+        .mark { width: 30px; height: 30px; border: 1px solid var(--border); display: grid; place-items: center; font-weight: 700; letter-spacing: -0.02em; }
+        .nav { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+        .nav a { text-decoration: none; border-bottom: 1px solid transparent; }
+        .nav a:hover { border-bottom-color: var(--fg); }
+        h1 { font-size: clamp(28px, 3.4vw, 40px); line-height: 1.1; margin: 26px 0 10px; letter-spacing: -0.04em; }
+        p { margin: 10px 0; color: var(--muted); }
+        .tags { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+        .tag { font-size: 12px; color: var(--muted); border: 1px solid var(--border); padding: 6px 10px; border-radius: 999px; }
+        section { padding-top: 24px; margin-top: 24px; border-top: 1px solid var(--border); }
+        h2 { font-size: 18px; margin: 0 0 10px; letter-spacing: -0.02em; }
+        h3 { font-size: 14px; margin: 14px 0 6px; color: var(--fg); letter-spacing: -0.01em; }
+        ul { margin: 8px 0 0 18px; color: var(--muted); }
+        li { margin: 6px 0; }
+        code, pre {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        }
+        pre {
+            margin: 10px 0 0;
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            background: var(--panel);
+            overflow: auto;
+        }
+        .grid { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 10px; }
+        @media (min-width: 820px) {
+            .grid { grid-template-columns: 1fr 1fr; }
+        }
+        .card { border: 1px solid var(--border); background: var(--panel); padding: 14px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px 10px; border-top: 1px solid var(--border); vertical-align: top; }
+        thead th { border-top: 0; border-bottom: 1px solid var(--border); text-align: left; color: var(--fg); font-weight: 600; }
+        tbody td { color: var(--muted); }
+        .table-wrap { overflow-x: auto; border: 1px solid var(--border); background: var(--panel); }
+        footer { margin-top: 42px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+    </style>
+</head>
+<body>
+    <main class="wrap">
+        <div class="top">
+            <a class="brand" href="./index.html">
+                <span class="mark">EM</span>
+                <span>Emergency Mesh</span>
+            </a>
+            <nav class="nav">
+                <a href="./index.html">Home</a>
+                <a href="./index.html#setup">Setup</a>
+                <a href="./compare.html">Compare</a>
+                <a href="https://github.com/tanzir71/mesh-network">GitHub</a>
+            </nav>
+        </div>
+
+        <h1>Comparison: Emergency Mesh vs. Bitchat and other mesh messaging apps</h1>
+        <p>Focused on networking approach, dependency model, and developer ergonomics.</p>
+
+        <div class="tags">
+            <span class="tag">transport</span>
+            <span class="tag">topology</span>
+            <span class="tag">server dependency</span>
+            <span class="tag">E2EE</span>
+        </div>
+
+        <section>
+            <h2>What Emergency Mesh implements today (in this repo)</h2>
+            <div class="grid">
+                <div class="card">
+                    <h3>Web (emergency-mesh)</h3>
+                    <ul>
+                        <li>Local “mesh” transport: browser <code>BroadcastChannel</code> (same origin), useful for multi-tab simulation.</li>
+                        <li>Discovery: ANNOUNCE/HEARTBEAT + peer timeout.</li>
+                        <li>Features: chat + SOS broadcast/ack.</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3>Mobile (mesh-mobile)</h3>
+                    <ul>
+                        <li>Transport: WebSocket client to <code>/api/ws/mesh</code> (relay/broadcast).</li>
+                        <li>Offline content: posts cached in <code>AsyncStorage</code> with retention cutoffs + expiry.</li>
+                        <li>Sync model: optional “internet sync” pull/push path for posts.</li>
+                    </ul>
+                </div>
+            </div>
+            <p>Note: this repo does not currently implement BLE/Wi‑Fi Direct multi-hop routing or end-to-end encryption. The “mesh” layer here is a relay + local broadcast simulation.</p>
+        </section>
+
+        <section>
+            <h2>Comparison matrix (technical)</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="min-width: 180px;">Dimension</th>
+                            <th style="min-width: 240px;">Emergency Mesh (this repo)</th>
+                            <th style="min-width: 200px;">Bitchat</th>
+                            <th style="min-width: 200px;">Briar</th>
+                            <th style="min-width: 200px;">Meshtastic</th>
+                            <th style="min-width: 200px;">Bridgefy</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>Primary transport</td>
+                            <td>Web: BroadcastChannel<br>Mobile: WebSocket relay</td>
+                            <td>Bluetooth LE mesh (multi-hop)</td>
+                            <td>Internet via Tor; also supports local transports (device-to-device)</td>
+                            <td>LoRa radio + phone app bridge</td>
+                            <td>Bluetooth-based proximity messaging (details vary)</td>
+                        </tr>
+                        <tr>
+                            <td>Topology</td>
+                            <td>Relay (hub) + local broadcast simulation</td>
+                            <td>True ad-hoc multi-hop mesh</td>
+                            <td>Peer-to-peer; not a general-purpose multi-hop mesh</td>
+                            <td>Multi-hop radio mesh</td>
+                            <td>Marketed as mesh; implementation details not always public</td>
+                        </tr>
+                        <tr>
+                            <td>Server dependency</td>
+                            <td>Yes (WebSocket relay + API server)</td>
+                            <td>No (local radios)</td>
+                            <td>No central server, but relies on Tor network</td>
+                            <td>No (local radios)</td>
+                            <td>Typically no, but behavior/features may vary</td>
+                        </tr>
+                        <tr>
+                            <td>End-to-end encryption</td>
+                            <td>Not implemented in current code</td>
+                            <td>Yes (per docs)</td>
+                            <td>Yes</td>
+                            <td>Varies by channel/settings and ecosystem</td>
+                            <td>Varies; verify per version</td>
+                        </tr>
+                        <tr>
+                            <td>Routing / relay</td>
+                            <td>Server broadcast; no TTL routing</td>
+                            <td>TTL-based multi-hop routing (per docs)</td>
+                            <td>Store-and-forward over contacts (model differs)</td>
+                            <td>Flood/relay style over radio mesh (implementation specific)</td>
+                            <td>Varies</td>
+                        </tr>
+                        <tr>
+                            <td>Developer ergonomics</td>
+                            <td>TypeScript monorepo; OpenAPI + Zod; shared libs</td>
+                            <td>Native app stack; protocol-focused</td>
+                            <td>Mature product; heavier crypto/network stack</td>
+                            <td>Device + firmware + app ecosystem</td>
+                            <td>Product-oriented; implementation openness varies</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <p>Bitchat cells summarize information described in its public documentation. “Varies” indicates the details depend on the specific version/ecosystem and should be verified against primary sources.</p>
+        </section>
+
+        <section>
+            <h2>Implications for this project</h2>
+            <div class="grid">
+                <div class="card">
+                    <h3>Why Emergency Mesh is different</h3>
+                    <ul>
+                        <li>Ops-first: a web dashboard + mobile client + API server gives a place to coordinate incidents.</li>
+                        <li>Extensible: OpenAPI/Zod types make it straightforward to add new message types, map layers, or retention rules.</li>
+                        <li>Prototype-friendly: the web app simulates “nearby peers” across tabs for fast iteration.</li>
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3>If you want Bitchat-like properties</h3>
+                    <ul>
+                        <li>Mesh transport: add BLE / Wi‑Fi Direct + multi-hop routing on-device.</li>
+                        <li>Security: add E2EE with modern primitives and authenticated peer identity.</li>
+                        <li>No relay: redesign WebSocket broadcast into optional infrastructure, not a dependency.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <footer>
+            <div>Emergency Mesh Network</div>
+        </footer>
+    </main>
+</body>
+</html>
