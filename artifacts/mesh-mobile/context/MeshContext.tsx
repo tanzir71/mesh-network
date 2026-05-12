@@ -6,9 +6,21 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Platform } from "react-native";
+import { NativeEventEmitter, NativeModules, PermissionsAndroid, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
+import BleManager, { BleScanMode } from "react-native-ble-manager";
+import {
+  PERMISSIONS as BLE_PERMISSIONS,
+  PROPERTIES as BLE_PROPERTIES,
+  addCharacteristicToService as bleAddCharacteristicToService,
+  addService as bleAddService,
+  isAdvertising as bleIsAdvertising,
+  sendNotificationToDevices as bleSendNotificationToDevices,
+  setName as bleSetName,
+  start as bleStartAdvertising,
+  stop as bleStopAdvertising,
+} from "rn-ble-connect";
 import { onPeerDetected, onSyncComplete } from "@/services/backgroundSync";
 import {
   getInternetSyncStatus,
@@ -86,8 +98,8 @@ export type Post = {
 };
 
 type MeshMessage =
-  | { type: "ANNOUNCE" | "HEARTBEAT"; node: NodeInfo }
-  | { type: "GOODBYE"; id: string }
+  | { type: "ANNOUNCE" | "HEARTBEAT"; node: NodeInfo; room: string }
+  | { type: "GOODBYE"; id: string; room: string }
   | { type: "CHAT"; msg: ChatMessage }
   | { type: "SOS"; alert: SosAlert }
   | { type: "SOS_ACK"; alertId: string; from: string }
@@ -115,6 +127,55 @@ const MeshContext = createContext<MeshContextType | null>(null);
 const PEER_TIMEOUT = 10000;
 const HEARTBEAT_MS = 3000;
 const WS_URL = `wss://${process.env.EXPO_PUBLIC_DOMAIN}/api/ws/mesh`;
+const ROOM = process.env.EXPO_PUBLIC_MESH_ROOM || "public";
+
+const BLE_SERVICE_UUID = "26f08670-ffdf-40eb-9067-78b9ae6e7919";
+const BLE_CHAR_UUID = "342730d1-9221-4da0-ab8b-bbd7da07ca62";
+const BLE_MAX_PACKET = 20;
+const BLE_HEADER_LEN = 7;
+const BLE_CHUNK_DATA_MAX = BLE_MAX_PACKET - BLE_HEADER_LEN;
+const BLE_DEFAULT_TTL = 4;
+const BLE_MAX_SEEN = 5000;
+
+type BleEnvelope = {
+  type: "BLE_MESH";
+  id: string;
+  originId: string;
+  ttl: number;
+  payload: MeshMessage;
+};
+
+function utf8ToBytes(text: string): number[] {
+  const s = unescape(encodeURIComponent(text));
+  const out = new Array<number>(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xff;
+  return out;
+}
+
+function bytesToUtf8(bytes: ArrayLike<number>): string {
+  let s = "";
+  const chunk = 8192;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    const slice = Array.prototype.slice.call(bytes, i, i + chunk) as number[];
+    s += String.fromCharCode(...slice);
+  }
+  return decodeURIComponent(escape(s));
+}
+
+function u32ToBytes(n: number): [number, number, number, number] {
+  const v = n >>> 0;
+  return [(v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff];
+}
+
+function bytesToU32(b0: number, b1: number, b2: number, b3: number): number {
+  return (((b0 & 0xff) << 24) | ((b1 & 0xff) << 16) | ((b2 & 0xff) << 8) | (b3 & 0xff)) >>> 0;
+}
+
+function randomU32(): number {
+  const a = (Date.now() & 0xffffffff) >>> 0;
+  const b = Math.floor(Math.random() * 0xffffffff) >>> 0;
+  return (a ^ b) >>> 0;
+}
 
 function mergePosts(
   existing: Post[],
@@ -187,6 +248,18 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
   const initialized = useRef(false);
   const postsLoaded = useRef(false);
 
+  const bleInitRef = useRef(false);
+  const bleScanInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bleHeartbeatInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bleIsScanningRef = useRef(false);
+  const bleConnectedRef = useRef(new Set<string>());
+  const bleSeenRef = useRef(new Set<string>());
+  const bleSeenQueueRef = useRef<string[]>([]);
+  const bleCleanupRef = useRef<(() => void) | null>(null);
+  const blePartialRef = useRef(
+    new Map<string, { total: number; parts: Array<number[] | null>; t: number }>()
+  );
+
   // Load persisted posts + retention setting together on startup
   useEffect(() => {
     async function loadInitialData() {
@@ -235,6 +308,7 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     initialized.current = true;
     getLocation();
     connect();
+    startBleMesh();
     return () => cleanup();
   }, [myNode.id]);
 
@@ -267,6 +341,185 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  function rememberBleSeen(id: string) {
+    if (bleSeenRef.current.has(id)) return;
+    bleSeenRef.current.add(id);
+    bleSeenQueueRef.current.push(id);
+    if (bleSeenQueueRef.current.length > BLE_MAX_SEEN) {
+      const victim = bleSeenQueueRef.current.shift();
+      if (victim) bleSeenRef.current.delete(victim);
+    }
+  }
+
+  function bleBroadcastEnvelope(env: BleEnvelope) {
+    try {
+      if (Platform.OS === "web") return;
+      if (!bleIsAdvertising()) return;
+      const raw = JSON.stringify(env);
+      const bytes = utf8ToBytes(raw);
+      const msgId = randomU32();
+      const total = Math.max(1, Math.ceil(bytes.length / BLE_CHUNK_DATA_MAX));
+      const idBytes = u32ToBytes(msgId);
+
+      for (let idx = 0; idx < total; idx++) {
+        const start = idx * BLE_CHUNK_DATA_MAX;
+        const end = Math.min(bytes.length, start + BLE_CHUNK_DATA_MAX);
+        const chunk = bytes.slice(start, end);
+        const packet: number[] = [1, idBytes[0], idBytes[1], idBytes[2], idBytes[3], total & 0xff, idx & 0xff, ...chunk];
+        bleSendNotificationToDevices(BLE_SERVICE_UUID, BLE_CHAR_UUID, packet);
+      }
+    } catch {}
+  }
+
+  function bleBroadcastMessage(payload: MeshMessage, ttl = BLE_DEFAULT_TTL) {
+    const env: BleEnvelope = {
+      type: "BLE_MESH",
+      id: randomId(12) + Date.now().toString(36),
+      originId: myNodeRef.current.id,
+      ttl,
+      payload,
+    };
+    rememberBleSeen(env.id);
+    bleBroadcastEnvelope(env);
+  }
+
+  function handleBlePacket(deviceId: string, value: unknown) {
+    const bytes: number[] | null = Array.isArray(value)
+      ? (value as unknown[]).map((n) => (typeof n === "number" ? (n & 0xff) : 0))
+      : null;
+    if (!bytes || bytes.length < BLE_HEADER_LEN) return;
+    if (bytes[0] !== 1) return;
+    const msgId = bytesToU32(bytes[1], bytes[2], bytes[3], bytes[4]);
+    const total = bytes[5] & 0xff;
+    const idx = bytes[6] & 0xff;
+    if (total === 0 || idx >= total) return;
+    const key = `${deviceId}:${msgId}`;
+    const entry = blePartialRef.current.get(key) ?? {
+      total,
+      parts: new Array<number[] | null>(total).fill(null),
+      t: Date.now(),
+    };
+    if (entry.total !== total) return;
+    entry.parts[idx] = bytes.slice(BLE_HEADER_LEN);
+    entry.t = Date.now();
+    blePartialRef.current.set(key, entry);
+
+    let done = true;
+    for (let i = 0; i < entry.total; i++) {
+      if (!entry.parts[i]) { done = false; break; }
+    }
+    if (!done) return;
+    blePartialRef.current.delete(key);
+    const all: number[] = [];
+    for (let i = 0; i < entry.total; i++) {
+      const part = entry.parts[i];
+      if (part) all.push(...part);
+    }
+    try {
+      const raw = bytesToUtf8(all);
+      const env: BleEnvelope = JSON.parse(raw);
+      if (!env || env.type !== "BLE_MESH") return;
+      if (typeof env.id !== "string" || typeof env.originId !== "string") return;
+      if (bleSeenRef.current.has(env.id)) return;
+      rememberBleSeen(env.id);
+      handleMessage(env.payload);
+      if (env.ttl > 0) {
+        bleBroadcastEnvelope({ ...env, ttl: env.ttl - 1 });
+      }
+    } catch {}
+  }
+
+  async function startBleMesh() {
+    if (bleInitRef.current) return;
+    if (Platform.OS === "web") return;
+    bleInitRef.current = true;
+
+    try {
+      if (Platform.OS === "android") {
+        try {
+          await PermissionsAndroid.requestMultiple([
+            PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+            PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+            PermissionsAndroid.PERMISSIONS.BLUETOOTH_ADVERTISE,
+            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          ]);
+        } catch {}
+      }
+
+      try {
+        await BleManager.start({ showAlert: false });
+      } catch {}
+
+      try {
+        bleSetName(`mesh-${ROOM}`.slice(0, 20));
+        bleAddService(BLE_SERVICE_UUID, true);
+        bleAddCharacteristicToService(
+          BLE_SERVICE_UUID,
+          BLE_CHAR_UUID,
+          BLE_PERMISSIONS.readable,
+          BLE_PROPERTIES.supportsNotification,
+          "00"
+        );
+        await bleStartAdvertising();
+      } catch {}
+
+      const emitter = new NativeEventEmitter(NativeModules.BleManager);
+      const subs = [
+        emitter.addListener("BleManagerDiscoverPeripheral", async (p: any) => {
+          const id = p?.id;
+          if (typeof id !== "string") return;
+          if (bleConnectedRef.current.has(id)) return;
+          try {
+            bleConnectedRef.current.add(id);
+            await BleManager.connect(id);
+            await BleManager.retrieveServices(id);
+            try {
+              await BleManager.startNotification(id, BLE_SERVICE_UUID, BLE_CHAR_UUID);
+            } catch {}
+          } catch {
+            bleConnectedRef.current.delete(id);
+          }
+        }),
+        emitter.addListener("BleManagerDidUpdateValueForCharacteristic", (e: any) => {
+          const deviceId = e?.peripheral;
+          if (typeof deviceId !== "string") return;
+          handleBlePacket(deviceId, e?.value);
+        }),
+        emitter.addListener("BleManagerDisconnectPeripheral", (e: any) => {
+          const deviceId = e?.peripheral;
+          if (typeof deviceId === "string") {
+            bleConnectedRef.current.delete(deviceId);
+          }
+        }),
+        emitter.addListener("BleManagerStopScan", () => {
+          bleIsScanningRef.current = false;
+        }),
+      ];
+      bleCleanupRef.current = () => {
+        for (const s of subs) s.remove();
+      };
+
+      bleScanInterval.current = setInterval(() => {
+        if (bleIsScanningRef.current) return;
+        bleIsScanningRef.current = true;
+        BleManager.scan({ serviceUUIDs: [BLE_SERVICE_UUID], allowDuplicates: true, scanMode: BleScanMode.Balanced }).catch(() => {
+          bleIsScanningRef.current = false;
+        });
+      }, 7000);
+
+      bleHeartbeatInterval.current = setInterval(() => {
+        bleBroadcastMessage({ type: "HEARTBEAT", node: myNodeRef.current, room: ROOM });
+        const now = Date.now();
+        for (const [k, v] of blePartialRef.current) {
+          if (now - v.t > 30000) blePartialRef.current.delete(k);
+        }
+      }, HEARTBEAT_MS);
+
+      bleBroadcastMessage({ type: "ANNOUNCE", node: myNodeRef.current, room: ROOM });
+
+    } catch {}
+  }
+
   async function pullFromServer() {
     try {
       const { enabled } = await getInternetSyncStatus();
@@ -286,9 +539,9 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
 
       ws.onopen = () => {
         setConnected(true);
-        send({ type: "ANNOUNCE", node: myNodeRef.current });
+        send({ type: "ANNOUNCE", node: myNodeRef.current, room: ROOM });
         heartbeatInterval.current = setInterval(() => {
-          send({ type: "HEARTBEAT", node: myNodeRef.current });
+          send({ type: "HEARTBEAT", node: myNodeRef.current, room: ROOM });
         }, HEARTBEAT_MS);
         peerCleanupInterval.current = setInterval(() => {
           const now = Date.now();
@@ -324,13 +577,14 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
 
   function handleMessage(data: MeshMessage) {
     if (data.type === "ANNOUNCE" || data.type === "HEARTBEAT") {
+      if (data.room !== ROOM) return;
       if (data.node.id === myNodeRef.current.id) return;
       const isNew = data.type === "ANNOUNCE";
       setPeers((prev) =>
         new Map(prev).set(data.node.id, { ...data.node, lastSeen: Date.now() })
       );
       if (isNew) {
-        send({ type: "HEARTBEAT", node: myNodeRef.current });
+        send({ type: "HEARTBEAT", node: myNodeRef.current, room: ROOM });
         onPeerDetected(data.node.name).catch(() => {});
         if (postsRef.current.length > 0) {
           setTimeout(() => {
@@ -343,6 +597,7 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
         }
       }
     } else if (data.type === "GOODBYE") {
+      if (data.room !== ROOM) return;
       setPeers((prev) => { const m = new Map(prev); m.delete(data.id); return m; });
     } else if (data.type === "CHAT") {
       if (data.msg.fromId === myNodeRef.current.id) return;
@@ -393,8 +648,16 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     clearInterval(heartbeatInterval.current!);
     clearInterval(peerCleanupInterval.current!);
     clearTimeout(reconnectTimeout.current!);
+    if (bleScanInterval.current) clearInterval(bleScanInterval.current);
+    if (bleHeartbeatInterval.current) clearInterval(bleHeartbeatInterval.current);
+    try {
+      if (Platform.OS !== "web" && bleIsAdvertising()) bleStopAdvertising();
+    } catch {}
+    try {
+      bleCleanupRef.current?.();
+    } catch {}
     if (wsRef.current) {
-      send({ type: "GOODBYE", id: myNodeRef.current.id });
+      send({ type: "GOODBYE", id: myNodeRef.current.id, room: ROOM });
       wsRef.current.close();
     }
   }
@@ -409,6 +672,7 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     };
     setMessages((prev) => [msg, ...prev]);
     send({ type: "CHAT", msg });
+    bleBroadcastMessage({ type: "CHAT", msg });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, []);
 
@@ -423,6 +687,7 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     };
     setSosAlerts((prev) => [alert, ...prev]);
     send({ type: "SOS", alert });
+    bleBroadcastMessage({ type: "SOS", alert });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
   }, []);
 
@@ -431,6 +696,7 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
       prev.map((a) => (a.id === alertId ? { ...a, acked: true } : a))
     );
     send({ type: "SOS_ACK", alertId, from: myNodeRef.current.name });
+    bleBroadcastMessage({ type: "SOS_ACK", alertId, from: myNodeRef.current.name });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, []);
 
@@ -442,8 +708,9 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
       const updated = { ...prev, name: trimmed };
       myNodeRef.current = updated;
       if (wsRef.current?.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: "ANNOUNCE", node: updated }));
+        wsRef.current.send(JSON.stringify({ type: "ANNOUNCE", node: updated, room: ROOM }));
       }
+      bleBroadcastMessage({ type: "ANNOUNCE", node: updated, room: ROOM });
       return updated;
     });
   }, []);
@@ -463,6 +730,7 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     };
     setPosts((prev) => [post, ...prev]);
     send({ type: "POST_BROADCAST", post });
+    bleBroadcastMessage({ type: "POST_BROADCAST", post });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     getInternetSyncStatus().then(({ enabled }) => {
       if (enabled) inetPushPosts([post]).catch(() => {});

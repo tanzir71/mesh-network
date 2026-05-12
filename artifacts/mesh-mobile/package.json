@@ -59,6 +59,8 @@
     "expo-background-fetch": "^14.0.9",
     "expo-notifications": "^0.32.17",
     "expo-task-manager": "^14.0.9",
+    "react-native-ble-manager": "^12.4.5",
+    "rn-ble-connect": "^1.0.0",
     "react-native-maps": "1.18.0"
   }
 }

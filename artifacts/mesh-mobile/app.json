@@ -19,13 +19,24 @@
         "UIBackgroundModes": [
           "fetch",
           "processing"
-        ]
+        ],
+        "NSBluetoothAlwaysUsageDescription": "This app uses Bluetooth to connect to nearby devices.",
+        "NSBluetoothPeripheralUsageDescription": "This app uses Bluetooth to create a peer-to-peer mesh."
       },
       "bundleIdentifier": "com.meshnetwork.app"
     },
     "android": {
       "useNextNotificationsApi": true,
-      "package": "com.meshnetwork.app"
+      "package": "com.meshnetwork.app",
+      "permissions": [
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_ADVERTISE",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
     },
     "web": {
       "favicon": "./assets/images/icon.png"
@@ -37,6 +48,7 @@
           "origin": "https://replit.com/"
         }
       ],
+      "react-native-ble-manager",
       "expo-font",
       "expo-web-browser",
       [

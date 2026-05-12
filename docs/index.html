@@ -6,11 +6,14 @@
     <title>Emergency Mesh</title>
     <style>
         :root {
-            --bg: #000;
-            --fg: #fff;
-            --muted: #a3a3a3;
-            --border: #1f1f1f;
-            --panel: #0a0a0a;
+            --bg: #ffffff;
+            --fg: #09090b;
+            --muted: #52525b;
+            --muted-2: #71717a;
+            --border: #e4e4e7;
+            --panel: #ffffff;
+            --hover: #fafafa;
+            --focus: #09090b;
         }
         * { box-sizing: border-box; }
         html { scroll-behavior: smooth; }
@@ -21,156 +24,434 @@
             font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
             line-height: 1.5;
         }
-        a { color: var(--fg); text-decoration: underline; text-underline-offset: 3px; }
-        a:hover { opacity: 0.85; }
-        .wrap { max-width: 860px; margin: 0 auto; padding: 32px 20px 80px; }
-        .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
-        .brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; }
-        .mark { width: 30px; height: 30px; border: 1px solid var(--border); display: grid; place-items: center; font-weight: 700; letter-spacing: -0.02em; }
-        .nav { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
-        .nav a { text-decoration: none; border-bottom: 1px solid transparent; }
-        .nav a:hover { border-bottom-color: var(--fg); }
-        h1 { font-size: clamp(34px, 4vw, 54px); line-height: 1.05; margin: 28px 0 12px; letter-spacing: -0.04em; }
-        p { margin: 10px 0; color: var(--muted); }
-        .hero-links { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
+        a { color: inherit; text-decoration: none; }
+        a:hover { color: var(--fg); }
+        .container { margin: 0 auto; max-width: 1152px; padding-left: 16px; padding-right: 16px; }
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border-width: 0;
+        }
+        .skip:focus {
+            position: fixed;
+            left: 16px;
+            top: 16px;
+            z-index: 9999;
+            width: auto;
+            height: auto;
+            margin: 0;
+            overflow: visible;
+            clip: auto;
+            white-space: normal;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 40;
+            border-bottom: 1px solid var(--border);
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(10px);
+        }
+        .header-inner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding-top: 12px;
+            padding-bottom: 12px;
+        }
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .logo {
+            display: grid;
+            place-items: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--bg);
+        }
+        .logo span {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 12px;
+        }
+        .brand-name {
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+        }
+        nav {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 8px;
+            font-size: 14px;
+        }
+        .nav-link {
+            display: inline-flex;
+            height: 36px;
+            align-items: center;
+            border-radius: 8px;
+            padding-left: 8px;
+            padding-right: 8px;
+            color: var(--muted);
+            outline: none;
+            transition: background-color 120ms ease, color 120ms ease;
+        }
+        .nav-link:hover { background: var(--hover); color: var(--fg); }
+        .nav-link:focus-visible { box-shadow: 0 0 0 2px var(--focus); outline: 2px solid transparent; outline-offset: 2px; }
         .btn {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            padding: 10px 12px;
+            height: 44px;
+            padding-left: 16px;
+            padding-right: 16px;
+            border-radius: 10px;
             border: 1px solid var(--border);
-            background: transparent;
+            background: var(--bg);
             color: var(--fg);
-            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            outline: none;
+            transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
         }
-        .btn:hover { background: var(--panel); }
-        .tags { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
-        .tag { font-size: 12px; color: var(--muted); border: 1px solid var(--border); padding: 6px 10px; border-radius: 999px; }
-        section { padding-top: 26px; margin-top: 26px; border-top: 1px solid var(--border); }
-        h2 { font-size: 20px; margin: 0 0 10px; letter-spacing: -0.02em; }
-        h3 { font-size: 15px; margin: 16px 0 6px; color: var(--fg); letter-spacing: -0.01em; }
-        ul { margin: 8px 0 0 18px; color: var(--muted); }
-        li { margin: 6px 0; }
-        code, pre {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        .btn:hover { background: var(--hover); }
+        .btn:focus-visible { box-shadow: 0 0 0 2px var(--focus); outline: 2px solid transparent; outline-offset: 2px; }
+        .btn-primary { background: var(--fg); border-color: var(--fg); color: #fff; }
+        .btn-primary:hover { background: #18181b; border-color: #18181b; }
+        .btn-primary:focus-visible { box-shadow: 0 0 0 2px var(--focus), 0 0 0 4px var(--bg); }
+        main { display: block; }
+        .hero {
+            position: relative;
+            overflow: hidden;
         }
-        pre {
-            margin: 10px 0 0;
-            padding: 12px 14px;
+        .hero::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at top, rgba(0, 0, 0, 0.06), transparent 55%);
+            pointer-events: none;
+        }
+        .hero-inner { position: relative; padding-top: 80px; padding-bottom: 96px; }
+        .pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            padding: 6px 12px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+        h1 {
+            margin: 0;
+            margin-top: 10px;
+            font-size: 40px;
+            font-weight: 600;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+            text-wrap: balance;
+        }
+        @media (min-width: 640px) {
+            h1 { font-size: 52px; }
+        }
+        .lead {
+            margin-top: 16px;
+            max-width: 560px;
+            font-size: 16px;
+            line-height: 1.75;
+            color: var(--muted);
+            text-wrap: pretty;
+        }
+        @media (min-width: 640px) {
+            .lead { font-size: 18px; }
+        }
+        .cta-row { margin-top: 28px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+        .tags { margin-top: 32px; display: flex; flex-wrap: wrap; gap: 8px; }
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            padding: 6px 10px;
+            font-size: 12px;
+            color: var(--muted);
+        }
+        .section { padding-top: 64px; padding-bottom: 80px; }
+        .section-head { margin-bottom: 24px; }
+        h2 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+        }
+        @media (min-width: 640px) {
+            h2 { font-size: 24px; }
+        }
+        .sub {
+            margin-top: 8px;
+            font-size: 14px;
+            color: var(--muted);
+        }
+        @media (min-width: 640px) {
+            .sub { font-size: 16px; }
+        }
+        .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+        @media (min-width: 640px) { .grid-2 { grid-template-columns: 1fr 1fr; } }
+        @media (min-width: 1024px) { .grid-4 { grid-template-columns: repeat(4, 1fr); } }
+        .card {
+            border-radius: 12px;
             border: 1px solid var(--border);
             background: var(--panel);
-            overflow: auto;
+            padding: 16px;
+            transition: border-color 120ms ease;
         }
-        .grid { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 10px; }
-        @media (min-width: 760px) {
-            .grid { grid-template-columns: 1fr 1fr; gap: 14px; }
+        .card:hover { border-color: #d4d4d8; }
+        h3 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: -0.01em;
         }
-        .card { border: 1px solid var(--border); background: var(--panel); padding: 14px; }
-        .card p { margin: 6px 0 0; }
-        .path { display: inline-block; margin-top: 10px; font-size: 12px; color: var(--muted); border: 1px solid var(--border); padding: 4px 8px; }
-        footer { margin-top: 42px; padding-top: 16px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12px; }
+        .card p { margin: 8px 0 0; font-size: 14px; line-height: 1.65; color: var(--muted); }
+        .dl {
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--panel);
+            overflow: hidden;
+        }
+        .dl-grid { display: grid; grid-template-columns: 1fr; }
+        @media (min-width: 640px) { .dl-grid { grid-template-columns: 1fr 1fr; } }
+        .dl-item { padding: 16px; border-top: 1px solid var(--border); }
+        .dl-item:nth-child(1) { border-top: 0; }
+        @media (min-width: 640px) {
+            .dl-item { border-top: 0; }
+            .dl-item { border-left: 1px solid var(--border); }
+            .dl-item:nth-child(odd) { border-left: 0; }
+            .dl-item:nth-child(n+3) { border-top: 1px solid var(--border); }
+        }
+        dt { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-2); font-weight: 600; }
+        dd { margin: 10px 0 0; font-size: 14px; color: var(--fg); }
+        .callout {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            align-items: flex-start;
+            justify-content: space-between;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--panel);
+            padding: 20px;
+        }
+        @media (min-width: 640px) {
+            .callout { flex-direction: row; align-items: center; }
+        }
+        .callout p { margin: 0; }
+        .callout .title { font-size: 14px; font-weight: 600; color: var(--fg); }
+        .callout .desc { margin-top: 6px; font-size: 14px; color: var(--muted); }
+        footer {
+            border-top: 1px solid var(--border);
+            padding-top: 40px;
+            padding-bottom: 40px;
+        }
+        .footer-inner {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            justify-content: space-between;
+        }
+        @media (min-width: 640px) {
+            .footer-inner { flex-direction: row; align-items: center; }
+        }
+        .footer-note { font-size: 12px; color: var(--muted-2); }
+        .footer-links { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; }
+        .footer-links a { color: var(--muted); text-decoration: underline; text-underline-offset: 4px; }
+        .footer-links a:hover { color: var(--fg); }
     </style>
 </head>
 <body>
-    <main class="wrap">
-        <div class="top">
-            <a class="brand" href="./index.html">
-                <span class="mark">EM</span>
-                <span>Emergency Mesh</span>
-            </a>
-            <nav class="nav">
-                <a href="#architecture">Architecture</a>
-                <a href="#stack">Stack</a>
-                <a href="#setup">Setup</a>
-                <a href="./compare.html">Compare</a>
-                <a href="https://github.com/tanzir71/mesh-network">GitHub</a>
+    <a href="#content" class="sr-only skip">Skip to content</a>
+
+    <header>
+        <div class="container header-inner">
+            <div class="brand">
+                <div class="logo"><span>EM</span></div>
+                <span class="brand-name">Emergency Mesh</span>
+            </div>
+            <nav>
+                <a class="nav-link" href="#features">Features</a>
+                <a class="nav-link" href="#how">How</a>
+                <a class="nav-link" href="#tech">Tech</a>
+                <a class="nav-link" href="#contact">Contact</a>
+                <a class="btn btn-primary" href="https://github.com/tanzir71/mesh-network" target="_blank" rel="noreferrer">View repo</a>
             </nav>
         </div>
+    </header>
 
-        <h1>Offline-capable<br>coordination for emergencies.</h1>
-        <p>Stay connected, broadcast SOS alerts, and coordinate updates when traditional infrastructure is unreliable or unavailable.</p>
-
-        <div class="hero-links">
-            <a class="btn" href="#setup">Get started</a>
-            <a class="btn" href="./compare.html">Compare</a>
-            <a class="btn" href="#architecture">Read more</a>
-        </div>
-
-        <div class="tags">
-            <span class="tag">TypeScript</span>
-            <span class="tag">pnpm workspaces</span>
-            <span class="tag">WebSocket relay</span>
-            <span class="tag">Expo mobile</span>
-            <span class="tag">Vite web</span>
-        </div>
-
-        <section id="architecture">
-            <h2>Architecture</h2>
-            <p>A pnpm monorepo with a web dashboard, a mobile client, an API relay/server, and shared libraries.</p>
-
-            <div class="grid">
-                <div class="card">
-                    <h3>emergency-mesh</h3>
-                    <p>React web dashboard (Vite). Local multi-tab mesh simulation via <code>BroadcastChannel</code>.</p>
-                    <span class="path">artifacts/emergency-mesh</span>
-                </div>
-                <div class="card">
-                    <h3>mesh-mobile</h3>
-                    <p>Expo mobile client. Uses a WebSocket relay and caches posts for offline viewing.</p>
-                    <span class="path">artifacts/mesh-mobile</span>
-                </div>
-                <div class="card">
-                    <h3>api-server</h3>
-                    <p>Express + <code>ws</code> relay for real-time coordination and message fanout.</p>
-                    <span class="path">artifacts/api-server</span>
-                </div>
-                <div class="card">
-                    <h3>shared libs</h3>
-                    <p>DB schema, OpenAPI spec, generated client, and shared validation/types.</p>
-                    <span class="path">lib/*</span>
+    <main id="content">
+        <section class="hero">
+            <div class="container hero-inner">
+                <div style="max-width: 640px;">
+                    <p class="pill">
+                        <span class="mono">v1</span>
+                        <span>Offline-capable • ops-first • open source</span>
+                    </p>
+                    <h1>Local-first coordination for emergency mesh response.</h1>
+                    <p class="lead">
+                        Coordinate peers, broadcast SOS alerts, and share updates across web + mobile with real transports: WebRTC peer mesh on web, Bluetooth LE mesh on mobile, and optional relay/signaling for WAN.
+                    </p>
+                    <div class="cta-row">
+                        <a class="btn btn-primary" href="https://github.com/tanzir71/mesh-network" target="_blank" rel="noreferrer">View repo</a>
+                        <a class="btn" href="#features">See workflow</a>
+                        <a class="btn" href="./compare.html">Compare</a>
+                    </div>
+                    <div class="tags">
+                        <span class="tag mono">Local-first</span>
+                        <span class="tag mono">Offline</span>
+                        <span class="tag mono">WebRTC</span>
+                        <span class="tag mono">BLE</span>
+                        <span class="tag mono">TURN (optional)</span>
+                        <span class="tag mono">Expo</span>
+                        <span class="tag mono">Vite</span>
+                        <span class="tag mono">OpenAPI/Zod</span>
+                    </div>
                 </div>
             </div>
         </section>
 
-        <section id="stack">
-            <h2>Stack</h2>
-            <ul>
-                <li>Frontend: React + Vite (web), Expo (mobile)</li>
-                <li>Backend: Node.js + Express + WebSockets (<code>ws</code>)</li>
-                <li>Data: Drizzle ORM + shared Zod schemas + generated API client</li>
-                <li>Tooling: TypeScript + pnpm workspaces</li>
-            </ul>
+        <section id="features" class="section">
+            <div class="container">
+                <div class="section-head">
+                    <h2>Workflow</h2>
+                    <p class="sub">Discover → coordinate → alert → sync. Built for reliability and iteration.</p>
+                </div>
+                <div class="grid grid-2 grid-4">
+                    <div class="card">
+                        <h3>Peer discovery</h3>
+                        <p>Node announce/heartbeat + cleanup to keep a current view of reachable peers.</p>
+                    </div>
+                    <div class="card">
+                        <h3>Chat + updates</h3>
+                        <p>Lightweight messaging and posts designed for fast operational coordination.</p>
+                    </div>
+                    <div class="card">
+                        <h3>SOS broadcast</h3>
+                        <p>Create and acknowledge emergency alerts to coordinate response across devices.</p>
+                    </div>
+                    <div class="card">
+                        <h3>Offline retention</h3>
+                        <p>Mobile caches posts locally with retention cutoffs and expiry for field conditions.</p>
+                    </div>
+                </div>
+            </div>
         </section>
 
-        <section id="setup">
-            <h2>Setup</h2>
-            <p>Requirements: Node.js (v18+) and pnpm.</p>
+        <section id="how" class="section">
+            <div class="container">
+                <div class="section-head">
+                    <h2>How the mesh works (this repo)</h2>
+                    <p class="sub">Minimal by design: discover peers, establish links, then forward messages with de-dupe + TTL.</p>
+                </div>
 
-            <h3>Install</h3>
-            <pre><code>git clone &lt;repository-url&gt;
-cd mesh-network
-pnpm install</code></pre>
-
-            <h3>Run</h3>
-            <pre><code>pnpm --filter @workspace/api-server run dev
-pnpm --filter @workspace/emergency-mesh run dev
-pnpm --filter @workspace/mesh-mobile run dev</code></pre>
+                <div class="grid grid-2">
+                    <div class="card">
+                        <h3>Web (P2P over IP)</h3>
+                        <p>Browsers connect via WebRTC data channels. Messages are forwarded gossip-style with TTL for multi-hop delivery.</p>
+                        <p class="mono" style="margin-top: 10px; color: var(--muted); font-size: 12px;">transport: webrtc • routing: ttl • scaling: bounded-degree</p>
+                    </div>
+                    <div class="card">
+                        <h3>Mobile (P2P over Bluetooth LE)</h3>
+                        <p>Phones advertise + scan a shared BLE service, connect, then broadcast message chunks via notifications. Peers reassemble, de-dupe, and forward with TTL.</p>
+                        <p class="mono" style="margin-top: 10px; color: var(--muted); font-size: 12px;">transport: ble • mtu: 20 bytes • routing: ttl</p>
+                    </div>
+                    <div class="card">
+                        <h3>WAN & rooms</h3>
+                        <p>For web WAN connectivity, a room-scoped WebSocket is used for discovery + signaling. TURN is optional for NAT traversal.</p>
+                        <p class="mono" style="margin-top: 10px; color: var(--muted); font-size: 12px;">signaling: websocket • stun: default • turn: optional</p>
+                    </div>
+                    <div class="card">
+                        <h3>Security (current status)</h3>
+                        <p>Transports are real, but end-to-end encryption and authenticated peer identity are not implemented yet.</p>
+                        <p class="mono" style="margin-top: 10px; color: var(--muted); font-size: 12px;">e2ee: no • identity: no</p>
+                    </div>
+                </div>
+            </div>
         </section>
 
-        <section id="improve">
-            <h2>Modify / Improve</h2>
-            <ul>
-                <li>DB models: <code>lib/db/src/schema/</code></li>
-                <li>API contract: <code>lib/api-spec/openapi.yaml</code></li>
-                <li>API server routes: <code>artifacts/api-server/src/routes/</code></li>
-                <li>Validation/types: <code>lib/api-zod</code></li>
-            </ul>
-            <p>See the repo README for deeper technical details and contribution notes.</p>
+        <section id="tech" class="section">
+            <div class="container">
+                <div class="section-head">
+                    <h2>Stack</h2>
+                    <p class="sub">TypeScript monorepo with WebRTC mesh (web), BLE mesh (mobile), and optional WebSocket signaling/relay.</p>
+                </div>
+                <div class="dl">
+                    <dl class="dl-grid">
+                        <div class="dl-item">
+                            <dt>Web</dt>
+                            <dd class="mono">React + Vite</dd>
+                        </div>
+                        <div class="dl-item">
+                            <dt>Mobile</dt>
+                            <dd class="mono">Expo + React Native + BLE</dd>
+                        </div>
+                        <div class="dl-item">
+                            <dt>Signaling</dt>
+                            <dd class="mono">Node.js + Express + ws</dd>
+                        </div>
+                        <div class="dl-item">
+                            <dt>Types</dt>
+                            <dd class="mono">OpenAPI + Zod + generated clients</dd>
+                        </div>
+                    </dl>
+                </div>
+            </div>
         </section>
 
-        <footer>
-            <div>Emergency Mesh Network • MIT</div>
-        </footer>
+        <section id="contact" class="section">
+            <div class="container">
+                <div class="section-head">
+                    <h2>Get involved</h2>
+                    <p class="sub">Ship the core, then harden transports and security.</p>
+                </div>
+                <div class="callout">
+                    <div>
+                        <p class="title">Want this on your machine?</p>
+                        <p class="desc">Open an issue with your target environment and constraints.</p>
+                    </div>
+                    <a class="btn" href="https://github.com/tanzir71/mesh-network/issues" target="_blank" rel="noreferrer">Open an issue</a>
+                </div>
+            </div>
+        </section>
     </main>
+
+    <footer>
+        <div class="container footer-inner">
+            <p class="footer-note">Emergency Mesh Network</p>
+            <div class="footer-links">
+                <a href="https://github.com/tanzir71/mesh-network" target="_blank" rel="noreferrer">GitHub</a>
+                <a href="./compare.html">Compare</a>
+                <a href="#features">Features</a>
+            </div>
+        </div>
+    </footer>
 </body>
 </html>
