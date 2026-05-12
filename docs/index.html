@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Emergency Mesh Network</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['Fira Code', 'monospace'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0fdfa',
+                            100: '#ccfbf1',
+                            500: '#14b8a6',
+                            600: '#0d9488',
+                            900: '#134e4a',
+                            950: '#042f2e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #020617;
+            color: #f8fafc;
+        }
+        .glow {
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(20, 184, 166, 0.15) 0%, rgba(0,0,0,0) 70%);
+            top: -200px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: -1;
+            pointer-events: none;
+        }
+        pre {
+            background-color: #0f172a !important;
+            border: 1px solid #1e293b;
+        }
+        code {
+            color: #5eead4;
+        }
+    </style>
+</head>
+<body class="antialiased relative min-h-screen selection:bg-brand-500 selection:text-white">
+    <div class="glow"></div>
+    
+    <header class="fixed top-0 w-full z-50 bg-slate-950/80 backdrop-blur-md border-b border-slate-800">
+        <div class="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 rounded bg-brand-500 flex items-center justify-center text-white font-bold">EM</div>
+                <span class="font-semibold text-lg tracking-tight">Emergency Mesh</span>
+            </div>
+            <nav class="hidden md:flex gap-6 text-sm font-medium text-slate-300">
+                <a href="#architecture" class="hover:text-brand-500 transition-colors">Architecture</a>
+                <a href="#tech-stack" class="hover:text-brand-500 transition-colors">Tech Stack</a>
+                <a href="#setup" class="hover:text-brand-500 transition-colors">Setup</a>
+                <a href="#contribute" class="hover:text-brand-500 transition-colors">Contribute</a>
+            </nav>
+            <a href="https://github.com/permissionlesstech/mesh-network" class="text-sm font-medium bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-md transition-all border border-slate-700">
+                GitHub
+            </a>
+        </div>
+    </header>
+
+    <main class="max-w-4xl mx-auto px-6 pt-32 pb-24">
+        <!-- Hero Section -->
+        <section class="text-center mb-20">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-500/10 text-brand-500 border border-brand-500/20 text-sm font-medium mb-6">
+                <span class="w-2 h-2 rounded-full bg-brand-500 animate-pulse"></span>
+                Offline-Capable
+            </div>
+            <h1 class="text-5xl md:text-6xl font-bold tracking-tight mb-6 text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-400">
+                Peer-to-Peer Network<br/>for Emergencies
+            </h1>
+            <p class="text-lg text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
+                Stay connected, broadcast SOS alerts, and communicate even when traditional internet infrastructure is completely unavailable.
+            </p>
+            <div class="flex items-center justify-center gap-4">
+                <a href="#setup" class="bg-brand-500 hover:bg-brand-600 text-white px-6 py-3 rounded-lg font-medium transition-all shadow-[0_0_20px_rgba(20,184,166,0.3)]">
+                    Get Started
+                </a>
+                <a href="#architecture" class="bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 px-6 py-3 rounded-lg font-medium transition-all">
+                    Learn More
+                </a>
+            </div>
+        </section>
+
+        <!-- Content Sections -->
+        <div class="space-y-16 prose prose-invert prose-slate max-w-none prose-headings:font-semibold prose-a:text-brand-500 hover:prose-a:text-brand-400">
+            
+            <section id="architecture" class="scroll-mt-24">
+                <h2 class="text-3xl text-slate-100 flex items-center gap-3">
+                    <svg class="w-6 h-6 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    Architecture
+                </h2>
+                <p class="text-slate-400">This project is structured as a powerful pnpm monorepo with distinct applications and shared libraries.</p>
+                
+                <div class="grid md:grid-cols-2 gap-6 mt-8 not-prose">
+                    <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-6 hover:border-slate-700 transition-colors">
+                        <h3 class="text-xl font-medium text-white mb-2">📱 emergency-mesh</h3>
+                        <p class="text-sm text-slate-400 mb-4">React web dashboard. Built with Vite, Tailwind CSS, and Radix UI.</p>
+                        <code class="text-xs bg-slate-950 px-2 py-1 rounded text-brand-500 border border-slate-800">artifacts/emergency-mesh</code>
+                    </div>
+                    <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-6 hover:border-slate-700 transition-colors">
+                        <h3 class="text-xl font-medium text-white mb-2">📲 mesh-mobile</h3>
+                        <p class="text-sm text-slate-400 mb-4">React Native Expo app for field use, background sync, and offline maps.</p>
+                        <code class="text-xs bg-slate-950 px-2 py-1 rounded text-brand-500 border border-slate-800">artifacts/mesh-mobile</code>
+                    </div>
+                    <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-6 hover:border-slate-700 transition-colors">
+                        <h3 class="text-xl font-medium text-white mb-2">⚙️ api-server</h3>
+                        <p class="text-sm text-slate-400 mb-4">Express.js backend handling data sync, WebSockets, and persistence.</p>
+                        <code class="text-xs bg-slate-950 px-2 py-1 rounded text-brand-500 border border-slate-800">artifacts/api-server</code>
+                    </div>
+                    <div class="bg-slate-900/50 border border-slate-800 rounded-xl p-6 hover:border-slate-700 transition-colors">
+                        <h3 class="text-xl font-medium text-white mb-2">📦 Shared Libraries</h3>
+                        <p class="text-sm text-slate-400 mb-4">Drizzle ORM db, Zod schemas, React Query clients, and OpenAPI specs.</p>
+                        <code class="text-xs bg-slate-950 px-2 py-1 rounded text-brand-500 border border-slate-800">lib/*</code>
+                    </div>
+                </div>
+            </section>
+
+            <section id="tech-stack" class="scroll-mt-24">
+                <h2 class="text-3xl text-slate-100 flex items-center gap-3">
+                    <svg class="w-6 h-6 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                    Tech Stack
+                </h2>
+                <ul class="text-slate-400">
+                    <li><strong>Frontend:</strong> React, React Native (Expo), Tailwind CSS, Radix UI, Vite</li>
+                    <li><strong>Backend:</strong> Node.js, Express.js, WebSockets (<code>ws</code>)</li>
+                    <li><strong>Database & State:</strong> Drizzle ORM, React Query</li>
+                    <li><strong>Tooling:</strong> TypeScript, pnpm (Workspaces), ESLint, Prettier</li>
+                </ul>
+            </section>
+
+            <section id="setup" class="scroll-mt-24">
+                <h2 class="text-3xl text-slate-100 flex items-center gap-3">
+                    <svg class="w-6 h-6 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    Setup Instructions
+                </h2>
+                
+                <h3>Prerequisites</h3>
+                <ul class="text-slate-400">
+                    <li>Node.js (v18 or higher recommended)</li>
+                    <li>pnpm (v8 or higher)</li>
+                </ul>
+
+                <h3>Installation</h3>
+                <pre><code class="language-bash">git clone &lt;repository-url&gt;
+cd mesh-network
+pnpm install</code></pre>
+
+                <h3>Running the Services</h3>
+                <p class="text-slate-400">Start the API Server:</p>
+                <pre><code class="language-bash">pnpm --filter @workspace/api-server run dev</code></pre>
+                
+                <p class="text-slate-400">Start the Web Dashboard (available at <code>http://localhost:5173</code>):</p>
+                <pre><code class="language-bash">pnpm --filter @workspace/emergency-mesh run dev</code></pre>
+                
+                <p class="text-slate-400">Start the Mobile App (use Expo Go to scan QR):</p>
+                <pre><code class="language-bash">pnpm --filter @workspace/mesh-mobile run dev</code></pre>
+            </section>
+
+            <section id="contribute" class="scroll-mt-24">
+                <h2 class="text-3xl text-slate-100 flex items-center gap-3">
+                    <svg class="w-6 h-6 text-brand-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                    How to Modify and Improve
+                </h2>
+                
+                <h4 class="text-white font-medium">Database Models</h4>
+                <p class="text-slate-400">Define your new schema in <code>lib/db/src/schema/</code>, update the export in <code>lib/db/src/index.ts</code>, generate migrations, and utilize the new tables in the API server.</p>
+
+                <h4 class="text-white font-medium">Expanding the API</h4>
+                <p class="text-slate-400">Update the OpenAPI spec in <code>lib/api-spec/openapi.yaml</code>, generate types, implement routes in <code>artifacts/api-server/src/routes/</code>, and add validation to <code>lib/api-zod</code>.</p>
+
+                <h4 class="text-white font-medium">UI Enhancements</h4>
+                <p class="text-slate-400">Modify shadcn/ui components in <code>artifacts/emergency-mesh/src/components/ui/</code> or update mobile components in <code>artifacts/mesh-mobile/components/</code>.</p>
+
+                <h4 class="text-white font-medium">Network & Offline Capabilities</h4>
+                <p class="text-slate-400">Enhance background sync in <code>artifacts/mesh-mobile/services/backgroundSync.ts</code> and update real-time node coordination in <code>artifacts/api-server/src/mesh.ts</code>.</p>
+            </section>
+        </div>
+    </main>
+
+    <footer class="border-t border-slate-800 bg-slate-950 mt-12 py-8 text-center text-slate-500 text-sm">
+        <p>&copy; 2026 Emergency Mesh Network. Open source under the MIT License.</p>
+    </footer>
+</body>
+</html>
