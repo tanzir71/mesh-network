@@ -297,6 +297,7 @@
                     <div class="tags">
                         <span class="tag mono">WebRTC</span>
                         <span class="tag mono">BLE</span>
+                        <span class="tag mono">Wi‑Fi Direct</span>
                         <span class="tag mono">WebSocket signaling</span>
                         <span class="tag mono">TTL forwarding</span>
                         <span class="tag mono">rooms</span>
@@ -331,7 +332,7 @@
                             <tbody>
                                 <tr>
                                     <td><strong>Primary transport</strong></td>
-                                    <td>Web: WebRTC data channels (P2P)<br>Mobile: Bluetooth LE (phone-to-phone)<br>Infra: WebSocket signaling/relay (optional)</td>
+                                    <td>Web: WebRTC data channels (P2P)<br>Mobile: Bluetooth LE (phone-to-phone) + Wi‑Fi Direct (Android)<br>Infra: WebSocket signaling/relay (optional)</td>
                                     <td>Bluetooth LE mesh (multi-hop)</td>
                                     <td>Internet via Tor; supports local transports</td>
                                     <td>LoRa radio mesh + phone bridge</td>
@@ -339,7 +340,7 @@
                                 </tr>
                                 <tr>
                                     <td><strong>Topology</strong></td>
-                                    <td>Web: P2P overlay + bounded degree + TTL forwarding<br>Mobile: proximity mesh + TTL forwarding</td>
+                                    <td>Web: P2P overlay + bounded degree + TTL forwarding<br>Mobile: BLE proximity mesh + TTL forwarding<br>Wi‑Fi Direct: star group + owner-forwarding</td>
                                     <td>Ad-hoc multi-hop mesh</td>
                                     <td>Peer-to-peer (model differs)</td>
                                     <td>Multi-hop radio mesh</td>
@@ -355,7 +356,7 @@
                                 </tr>
                                 <tr>
                                     <td><strong>Routing</strong></td>
-                                    <td>Web: gossip forwarding with TTL<br>Mobile: TTL forwarding (chunked notifications)</td>
+                                    <td>Web: bounded fanout + TTL forwarding + backpressure<br>Mobile BLE: TTL forwarding (chunked notifications) + rate limiting<br>Wi‑Fi Direct: owner-forwarding + rate limiting</td>
                                     <td>TTL-based multi-hop routing (per docs)</td>
                                     <td>Store-and-forward (model differs)</td>
                                     <td>Flood/relay over radio mesh</td>
@@ -401,14 +402,15 @@
                             <li>Minimal signaling service (WebSocket)</li>
                             <li>TTL forwarding for multi-hop delivery</li>
                             <li>Mobile: BLE phone-to-phone mesh transport</li>
+                            <li>Mobile: Wi‑Fi Direct transport on Android</li>
                         </ul>
                     </div>
                     <div class="card">
                         <h3>What closes the gap to Bitchat-like systems</h3>
                         <ul>
                             <li>Add E2EE + peer identity</li>
-                            <li>Add Wi‑Fi Direct transport for higher throughput</li>
-                            <li>Add better routing + congestion control</li>
+                            <li>Add iOS high-throughput local transport (Multipeer / Wi‑Fi Aware alternative)</li>
+                            <li>Add multi-group bridging + better peer selection</li>
                         </ul>
                     </div>
                 </div>

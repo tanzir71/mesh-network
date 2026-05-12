@@ -10,6 +10,7 @@ import { NativeEventEmitter, NativeModules, PermissionsAndroid, Platform } from 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import BleManager, { BleScanMode } from "react-native-ble-manager";
+import type { EmitterSubscription } from "react-native";
 import {
   PERMISSIONS as BLE_PERMISSIONS,
   PROPERTIES as BLE_PROPERTIES,
@@ -21,6 +22,22 @@ import {
   start as bleStartAdvertising,
   stop as bleStopAdvertising,
 } from "rn-ble-connect";
+import type { WifiP2pInfo } from "react-native-wifi-p2p";
+import {
+  initialize as wifiInitialize,
+  startDiscoveringPeers as wifiStartDiscoveringPeers,
+  stopDiscoveringPeers as wifiStopDiscoveringPeers,
+  subscribeOnPeersUpdates as wifiSubscribeOnPeersUpdates,
+  subscribeOnConnectionInfoUpdates as wifiSubscribeOnConnectionInfoUpdates,
+  connectWithConfig as wifiConnectWithConfig,
+  createGroup as wifiCreateGroup,
+  removeGroup as wifiRemoveGroup,
+  getConnectionInfo as wifiGetConnectionInfo,
+  sendMessage as wifiSendMessage,
+  sendMessageTo as wifiSendMessageTo,
+  receiveMessage as wifiReceiveMessage,
+  stopReceivingMessage as wifiStopReceivingMessage,
+} from "react-native-wifi-p2p";
 import { onPeerDetected, onSyncComplete } from "@/services/backgroundSync";
 import {
   getInternetSyncStatus,
@@ -136,12 +153,32 @@ const BLE_HEADER_LEN = 7;
 const BLE_CHUNK_DATA_MAX = BLE_MAX_PACKET - BLE_HEADER_LEN;
 const BLE_DEFAULT_TTL = 4;
 const BLE_MAX_SEEN = 5000;
+const BLE_PACKETS_PER_SEC = 55;
+const BLE_PACKET_BURST = 80;
+const BLE_FORWARD_MIN_DELAY_MS = 40;
+const BLE_FORWARD_MAX_DELAY_MS = 160;
+const BLE_MAX_QUEUE = 350;
+
+const WIFI_DEFAULT_TTL = 6;
+const WIFI_MAX_SEEN = 6000;
+const WIFI_MSGS_PER_SEC = 30;
+const WIFI_MSG_BURST = 45;
+const WIFI_MAX_QUEUE = 800;
 
 type BleEnvelope = {
   type: "BLE_MESH";
   id: string;
   originId: string;
   ttl: number;
+  payload: MeshMessage;
+};
+
+type WifiEnvelope = {
+  type: "WIFI_MESH";
+  id: string;
+  originId: string;
+  ttl: number;
+  room: string;
   payload: MeshMessage;
 };
 
@@ -256,9 +293,26 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
   const bleSeenRef = useRef(new Set<string>());
   const bleSeenQueueRef = useRef<string[]>([]);
   const bleCleanupRef = useRef<(() => void) | null>(null);
+  const blePacketQueueRef = useRef<number[][]>([]);
+  const blePacketPumpRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const blePacketBudgetRef = useRef({ tokens: BLE_PACKET_BURST, lastRefillMs: Date.now() });
   const blePartialRef = useRef(
     new Map<string, { total: number; parts: Array<number[] | null>; t: number }>()
   );
+
+  const wifiInitRef = useRef(false);
+  const wifiInfoRef = useRef<WifiP2pInfo | null>(null);
+  const wifiDiscoverInterval = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wifiConnectAttemptRef = useRef(0);
+  const wifiSubsRef = useRef<EmitterSubscription[]>([]);
+  const wifiStopRef = useRef(false);
+  const wifiReceiveLoopRef = useRef<Promise<void> | null>(null);
+  const wifiClientAddressesRef = useRef(new Set<string>());
+  const wifiSeenRef = useRef(new Set<string>());
+  const wifiSeenQueueRef = useRef<string[]>([]);
+  const wifiQueueRef = useRef<Array<{ message: string; to?: string }>>([]);
+  const wifiPumpRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wifiBudgetRef = useRef({ tokens: WIFI_MSG_BURST, lastRefillMs: Date.now() });
 
   // Load persisted posts + retention setting together on startup
   useEffect(() => {
@@ -309,6 +363,7 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     getLocation();
     connect();
     startBleMesh();
+    startWifiDirect();
     return () => cleanup();
   }, [myNode.id]);
 
@@ -361,12 +416,43 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
       const total = Math.max(1, Math.ceil(bytes.length / BLE_CHUNK_DATA_MAX));
       const idBytes = u32ToBytes(msgId);
 
+      if (blePacketQueueRef.current.length > BLE_MAX_QUEUE) return;
+
       for (let idx = 0; idx < total; idx++) {
         const start = idx * BLE_CHUNK_DATA_MAX;
         const end = Math.min(bytes.length, start + BLE_CHUNK_DATA_MAX);
         const chunk = bytes.slice(start, end);
         const packet: number[] = [1, idBytes[0], idBytes[1], idBytes[2], idBytes[3], total & 0xff, idx & 0xff, ...chunk];
-        bleSendNotificationToDevices(BLE_SERVICE_UUID, BLE_CHAR_UUID, packet);
+        blePacketQueueRef.current.push(packet);
+      }
+
+      if (!blePacketPumpRef.current) {
+        blePacketPumpRef.current = setInterval(() => {
+          if (Platform.OS === "web") return;
+          if (!bleIsAdvertising()) return;
+          const now = Date.now();
+          const elapsed = now - blePacketBudgetRef.current.lastRefillMs;
+          if (elapsed > 0) {
+            const add = (elapsed / 1000) * BLE_PACKETS_PER_SEC;
+            blePacketBudgetRef.current.tokens = Math.min(
+              BLE_PACKET_BURST,
+              blePacketBudgetRef.current.tokens + add,
+            );
+            blePacketBudgetRef.current.lastRefillMs = now;
+          }
+          while (blePacketBudgetRef.current.tokens >= 1 && blePacketQueueRef.current.length > 0) {
+            const pkt = blePacketQueueRef.current.shift();
+            if (!pkt) break;
+            blePacketBudgetRef.current.tokens -= 1;
+            try {
+              bleSendNotificationToDevices(BLE_SERVICE_UUID, BLE_CHAR_UUID, pkt);
+            } catch {}
+          }
+          if (blePacketQueueRef.current.length === 0 && blePacketPumpRef.current) {
+            clearInterval(blePacketPumpRef.current);
+            blePacketPumpRef.current = null;
+          }
+        }, 50);
       }
     } catch {}
   }
@@ -424,7 +510,15 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
       rememberBleSeen(env.id);
       handleMessage(env.payload);
       if (env.ttl > 0) {
-        bleBroadcastEnvelope({ ...env, ttl: env.ttl - 1 });
+        if (blePacketQueueRef.current.length < BLE_MAX_QUEUE) {
+          const delay =
+            BLE_FORWARD_MIN_DELAY_MS +
+            Math.floor(Math.random() * (BLE_FORWARD_MAX_DELAY_MS - BLE_FORWARD_MIN_DELAY_MS + 1));
+          setTimeout(() => {
+            if (blePacketQueueRef.current.length >= BLE_MAX_QUEUE) return;
+            bleBroadcastEnvelope({ ...env, ttl: env.ttl - 1 });
+          }, delay);
+        }
       }
     } catch {}
   }
@@ -517,6 +611,183 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
 
       bleBroadcastMessage({ type: "ANNOUNCE", node: myNodeRef.current, room: ROOM });
 
+    } catch {}
+  }
+
+  function rememberWifiSeen(id: string) {
+    if (wifiSeenRef.current.has(id)) return;
+    wifiSeenRef.current.add(id);
+    wifiSeenQueueRef.current.push(id);
+    if (wifiSeenQueueRef.current.length > WIFI_MAX_SEEN) {
+      const victim = wifiSeenQueueRef.current.shift();
+      if (victim) wifiSeenRef.current.delete(victim);
+    }
+  }
+
+  function wifiEnqueue(message: string, to?: string) {
+    if (Platform.OS !== "android") return;
+    if (!wifiInfoRef.current?.groupFormed) return;
+    if (wifiQueueRef.current.length >= WIFI_MAX_QUEUE) return;
+    wifiQueueRef.current.push({ message, to });
+    if (wifiPumpRef.current) return;
+
+    wifiPumpRef.current = setInterval(() => {
+      const now = Date.now();
+      const elapsed = now - wifiBudgetRef.current.lastRefillMs;
+      if (elapsed > 0) {
+        const add = (elapsed / 1000) * WIFI_MSGS_PER_SEC;
+        wifiBudgetRef.current.tokens = Math.min(WIFI_MSG_BURST, wifiBudgetRef.current.tokens + add);
+        wifiBudgetRef.current.lastRefillMs = now;
+      }
+      while (wifiBudgetRef.current.tokens >= 1 && wifiQueueRef.current.length > 0) {
+        const item = wifiQueueRef.current.shift();
+        if (!item) break;
+        wifiBudgetRef.current.tokens -= 1;
+        try {
+          if (item.to) {
+            void wifiSendMessageTo(item.message, item.to);
+          } else {
+            void wifiSendMessage(item.message);
+          }
+        } catch {}
+      }
+      if (wifiQueueRef.current.length === 0 && wifiPumpRef.current) {
+        clearInterval(wifiPumpRef.current);
+        wifiPumpRef.current = null;
+      }
+    }, 50);
+  }
+
+  function wifiBroadcastMessage(payload: MeshMessage, ttl = WIFI_DEFAULT_TTL) {
+    if (Platform.OS !== "android") return;
+    const env: WifiEnvelope = {
+      type: "WIFI_MESH",
+      id: randomId(14) + Date.now().toString(36),
+      originId: myNodeRef.current.id,
+      ttl,
+      room: ROOM,
+      payload,
+    };
+    rememberWifiSeen(env.id);
+    const raw = JSON.stringify(env);
+    if (!wifiInfoRef.current?.groupFormed) return;
+    if (wifiInfoRef.current.isGroupOwner) {
+      for (const addr of wifiClientAddressesRef.current) {
+        wifiEnqueue(raw, addr);
+      }
+    } else {
+      wifiEnqueue(raw);
+    }
+  }
+
+  async function wifiReceiveLoop() {
+    if (Platform.OS !== "android") return;
+    if (wifiReceiveLoopRef.current) return;
+    wifiStopRef.current = false;
+    wifiReceiveLoopRef.current = (async () => {
+      while (!wifiStopRef.current) {
+        try {
+          const res: any = await wifiReceiveMessage({ meta: true } as any);
+          let raw: string | null = null;
+          let fromAddress: string | null = null;
+          if (typeof res === "string") {
+            raw = res;
+          } else if (res && typeof res === "object") {
+            raw = typeof res.message === "string" ? res.message : null;
+            fromAddress = typeof res.fromAddress === "string" ? res.fromAddress : null;
+          }
+          if (!raw) continue;
+          let env: WifiEnvelope | null = null;
+          try {
+            env = JSON.parse(raw);
+          } catch {
+            env = null;
+          }
+          if (!env || env.type !== "WIFI_MESH") continue;
+          if (env.room !== ROOM) continue;
+          if (typeof env.id !== "string" || typeof env.originId !== "string") continue;
+          if (wifiSeenRef.current.has(env.id)) continue;
+          rememberWifiSeen(env.id);
+          if (fromAddress && wifiInfoRef.current?.isGroupOwner) {
+            wifiClientAddressesRef.current.add(fromAddress);
+          }
+          handleMessage(env.payload);
+          if (env.ttl > 0 && wifiInfoRef.current?.isGroupOwner) {
+            const next: WifiEnvelope = { ...env, ttl: env.ttl - 1 };
+            const nextRaw = JSON.stringify(next);
+            for (const addr of wifiClientAddressesRef.current) {
+              if (fromAddress && addr === fromAddress) continue;
+              wifiEnqueue(nextRaw, addr);
+            }
+          }
+        } catch {
+          await new Promise((r) => setTimeout(r, 120));
+        }
+      }
+    })().finally(() => {
+      wifiReceiveLoopRef.current = null;
+    });
+  }
+
+  async function startWifiDirect() {
+    if (wifiInitRef.current) return;
+    if (Platform.OS !== "android") return;
+    wifiInitRef.current = true;
+
+    try {
+      try {
+        const perms: string[] = [
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
+          "android.permission.ACCESS_WIFI_STATE",
+          "android.permission.CHANGE_WIFI_STATE",
+        ].filter(Boolean) as unknown as string[];
+        const nearby = (PermissionsAndroid.PERMISSIONS as any).NEARBY_WIFI_DEVICES;
+        if (nearby) perms.push(nearby);
+        await PermissionsAndroid.requestMultiple(perms as any);
+      } catch {}
+
+      try {
+        await wifiInitialize();
+      } catch {}
+
+      wifiSubsRef.current.push(
+        wifiSubscribeOnConnectionInfoUpdates(async (info) => {
+          wifiInfoRef.current = info;
+          if (info.groupFormed) {
+            try {
+              await wifiGetConnectionInfo();
+            } catch {}
+            void wifiReceiveLoop();
+            wifiBroadcastMessage({ type: "ANNOUNCE", node: myNodeRef.current, room: ROOM }, 1);
+          }
+        }),
+      );
+
+      wifiSubsRef.current.push(
+        wifiSubscribeOnPeersUpdates(({ devices }: any) => {
+          if (wifiInfoRef.current?.groupFormed) return;
+          const now = Date.now();
+          if (now - wifiConnectAttemptRef.current < 8000) return;
+          const device = Array.isArray(devices) ? devices[0] : null;
+          const addr = device?.deviceAddress;
+          if (typeof addr !== "string") return;
+          wifiConnectAttemptRef.current = now;
+          wifiConnectWithConfig({ deviceAddress: addr, groupOwnerIntent: 0 }).catch(() => {});
+        }) as any,
+      );
+
+      wifiDiscoverInterval.current = setInterval(() => {
+        if (wifiInfoRef.current?.groupFormed) return;
+        wifiStartDiscoveringPeers().catch(() => {});
+      }, 9000);
+
+      try {
+        await wifiCreateGroup();
+      } catch {}
+
+      wifiStartDiscoveringPeers().catch(() => {});
+      void wifiReceiveLoop();
     } catch {}
   }
 
@@ -650,11 +921,28 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     clearTimeout(reconnectTimeout.current!);
     if (bleScanInterval.current) clearInterval(bleScanInterval.current);
     if (bleHeartbeatInterval.current) clearInterval(bleHeartbeatInterval.current);
+    if (blePacketPumpRef.current) clearInterval(blePacketPumpRef.current);
+    if (wifiDiscoverInterval.current) clearInterval(wifiDiscoverInterval.current);
+    if (wifiPumpRef.current) clearInterval(wifiPumpRef.current);
     try {
       if (Platform.OS !== "web" && bleIsAdvertising()) bleStopAdvertising();
     } catch {}
     try {
       bleCleanupRef.current?.();
+    } catch {}
+    try {
+      wifiStopRef.current = true;
+      wifiStopReceivingMessage();
+    } catch {}
+    try {
+      wifiStopDiscoveringPeers().catch(() => {});
+    } catch {}
+    try {
+      wifiRemoveGroup().catch(() => {});
+    } catch {}
+    try {
+      for (const sub of wifiSubsRef.current) sub.remove();
+      wifiSubsRef.current = [];
     } catch {}
     if (wsRef.current) {
       send({ type: "GOODBYE", id: myNodeRef.current.id, room: ROOM });
@@ -673,6 +961,7 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     setMessages((prev) => [msg, ...prev]);
     send({ type: "CHAT", msg });
     bleBroadcastMessage({ type: "CHAT", msg });
+    wifiBroadcastMessage({ type: "CHAT", msg });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }, []);
 
@@ -688,6 +977,7 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     setSosAlerts((prev) => [alert, ...prev]);
     send({ type: "SOS", alert });
     bleBroadcastMessage({ type: "SOS", alert });
+    wifiBroadcastMessage({ type: "SOS", alert });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
   }, []);
 
@@ -697,6 +987,7 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     );
     send({ type: "SOS_ACK", alertId, from: myNodeRef.current.name });
     bleBroadcastMessage({ type: "SOS_ACK", alertId, from: myNodeRef.current.name });
+    wifiBroadcastMessage({ type: "SOS_ACK", alertId, from: myNodeRef.current.name });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }, []);
 
@@ -711,6 +1002,7 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
         wsRef.current.send(JSON.stringify({ type: "ANNOUNCE", node: updated, room: ROOM }));
       }
       bleBroadcastMessage({ type: "ANNOUNCE", node: updated, room: ROOM });
+      wifiBroadcastMessage({ type: "ANNOUNCE", node: updated, room: ROOM }, 1);
       return updated;
     });
   }, []);
@@ -731,6 +1023,7 @@ export function MeshProvider({ children }: { children: React.ReactNode }) {
     setPosts((prev) => [post, ...prev]);
     send({ type: "POST_BROADCAST", post });
     bleBroadcastMessage({ type: "POST_BROADCAST", post });
+    wifiBroadcastMessage({ type: "POST_BROADCAST", post });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     getInternetSyncStatus().then(({ enabled }) => {
       if (enabled) inetPushPosts([post]).catch(() => {});

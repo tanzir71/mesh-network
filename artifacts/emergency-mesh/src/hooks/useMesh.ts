@@ -18,6 +18,15 @@ function randomName() {
   return `Node-${NATO[Math.floor(Math.random() * NATO.length)]}`;
 }
 
+function fnv1a32(input: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
 export type Peer = {
   id: string;
   name: string;
@@ -75,6 +84,11 @@ const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
   { urls: ["stun:stun.l.google.com:19302"] },
 ];
 const MAX_SEEN_IDS = 5000;
+const MAX_BUFFERED_AMOUNT = 512_000;
+const SEND_TOKENS_PER_SEC = 140;
+const SEND_BURST = 200;
+const ORIGIN_FANOUT = 4;
+const FORWARD_FANOUT = 3;
 
 const myId = randomId();
 const myName = randomName();
@@ -172,6 +186,7 @@ export function useMesh() {
   const iceServersRef = useRef<RTCIceServer[]>(DEFAULT_ICE_SERVERS);
   const iceReadyRef = useRef(false);
   const pendingConnectRef = useRef(new Set<string>());
+  const sendBudgetRef = useRef({ tokens: SEND_BURST, lastRefillMs: Date.now() });
 
   const wsUrl = useMemo(() => pickWsUrl(), []);
   const room = useMemo(() => pickRoom(), []);
@@ -195,6 +210,59 @@ export function useMesh() {
       if (victim) seenRef.current.delete(victim);
     }
   }, []);
+
+  const refillSendBudget = useCallback(() => {
+    const now = Date.now();
+    const elapsed = now - sendBudgetRef.current.lastRefillMs;
+    if (elapsed <= 0) return;
+    const add = (elapsed / 1000) * SEND_TOKENS_PER_SEC;
+    const next = Math.min(SEND_BURST, sendBudgetRef.current.tokens + add);
+    sendBudgetRef.current.tokens = next;
+    sendBudgetRef.current.lastRefillMs = now;
+  }, []);
+
+  const tryConsumeSendToken = useCallback(() => {
+    refillSendBudget();
+    if (sendBudgetRef.current.tokens < 1) return false;
+    sendBudgetRef.current.tokens -= 1;
+    return true;
+  }, [refillSendBudget]);
+
+  const selectFanoutPeers = useCallback((msgId: string, candidates: string[], fanout: number) => {
+    if (candidates.length <= fanout) return candidates;
+    const scored = candidates
+      .map((id) => ({ id, score: fnv1a32(`${msgId}|${id}`) }))
+      .sort((a, b) => a.score - b.score);
+    return scored.slice(0, fanout).map((s) => s.id);
+  }, []);
+
+  const sendRawToPeer = useCallback(
+    (peerId: string, raw: string) => {
+      const ch = dataChRef.current.get(peerId);
+      if (!ch || ch.readyState !== "open") return false;
+      if (typeof ch.bufferedAmount === "number" && ch.bufferedAmount > MAX_BUFFERED_AMOUNT) return false;
+      if (!tryConsumeSendToken()) return false;
+      ch.send(raw);
+      return true;
+    },
+    [tryConsumeSendToken],
+  );
+
+  const sendRawToPeers = useCallback(
+    (msgId: string, raw: string, excludePeerId: string | null, fanout: number) => {
+      const candidates: string[] = [];
+      for (const [id, ch] of dataChRef.current) {
+        if (excludePeerId && id === excludePeerId) continue;
+        if (ch.readyState !== "open") continue;
+        candidates.push(id);
+      }
+      const selected = selectFanoutPeers(msgId, candidates, Math.max(0, Math.min(fanout, candidates.length)));
+      for (const id of selected) {
+        if (!sendRawToPeer(id, raw)) break;
+      }
+    },
+    [selectFanoutPeers, sendRawToPeer],
+  );
 
   const ensureDataChannel = useCallback(
     (peerId: string, ch: RTCDataChannel) => {
@@ -229,10 +297,7 @@ export function useMesh() {
             ttl: env.ttl - 1,
           };
           const raw = JSON.stringify(forwarded);
-          for (const [otherId, otherCh] of dataChRef.current) {
-            if (otherId === peerId) continue;
-            if (otherCh.readyState === "open") otherCh.send(raw);
-          }
+          sendRawToPeers(forwarded.id, raw, peerId, FORWARD_FANOUT);
         } catch {}
       };
 
@@ -242,7 +307,7 @@ export function useMesh() {
         }
       };
     },
-    [],
+    [rememberSeen, sendRawToPeers],
   );
 
   const getOrCreatePeerConn = useCallback(
@@ -377,11 +442,9 @@ export function useMesh() {
       };
       rememberSeen(env.id);
       const raw = JSON.stringify(env);
-      for (const ch of dataChRef.current.values()) {
-        if (ch.readyState === "open") ch.send(raw);
-      }
+      sendRawToPeers(env.id, raw, null, ORIGIN_FANOUT);
     },
-    [rememberSeen],
+    [rememberSeen, sendRawToPeers],
   );
 
   useEffect(() => {
